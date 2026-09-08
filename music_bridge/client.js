@@ -50,13 +50,22 @@ window.addEventListener('keydown',e=>{if(currentApp==='home'){homeKeysHeld.add(e
 window.addEventListener('keyup',e=>{if(homeKeysHeld.delete(e.code||e.key))homeIdleAt=performance.now();});
 window.addEventListener('blur',()=>{homeKeysHeld.clear();homePointerHeld=false;homeIdleAt=performance.now();});
 function showApp(app) {
-    currentApp=['music','radio','companion'].includes(app)?app:'home';
+    currentApp=['music','radio','companion','connection'].includes(app)?app:'home';
     homeIdleAt=performance.now();homeKeysHeld.clear();homePointerHeld=false;
     $('screen').dataset.app=currentApp;
     $('companionNearDemo').hidden=currentApp!=='companion';
     ['musicKeys','musicHint','notice','motionDemo'].forEach(id=>{$(id).hidden=currentApp!=='music'});
     window.history?.replaceState(null,'',currentApp==='home'?'#home':'#'+currentApp);
 }
+function networkPreview(mode){
+    $('connectionRows').hidden=mode==='edit';$('connectionPortal').hidden=mode!=='edit';
+    $('connectionStatus').textContent=mode==='edit'?'手机配网流程预览':mode==='work'?'公司网络未配置':mode==='home'?'预览：家庭网络已连接':'预览：自动选择可用网络';
+    $('networkAuto').dataset.active=String(mode==='auto');$('networkHome').dataset.active=String(mode==='home');
+}
+$('homeConnection').onclick=$('radioConnection').onclick=()=>showApp('connection');
+$('connectionHome').onclick=()=>showApp('home');
+$('networkAuto').onclick=()=>networkPreview('auto');$('networkHome').onclick=()=>networkPreview('home');
+$('networkWork').onclick=()=>networkPreview('work');$('networkEdit').onclick=()=>networkPreview('edit');
 $('openCompanion').onclick=()=>showApp('companion');
 $('companionHome').onclick=()=>showApp('home');
 $('openMusic').onclick=()=>showApp('music');$('openRadio').onclick=()=>showApp('radio');
@@ -226,6 +235,8 @@ document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>act(b.datase
 window.addEventListener('keydown',e=>{
     if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||['INPUT','TEXTAREA'].includes(e.target.tagName))return;
     if(e.key==='Escape'){e.preventDefault();showApp('home');return;}
+    if((currentApp==='home'||currentApp==='music')&&e.key.toLowerCase()==='s'){e.preventDefault();showApp('connection');return;}
+    if(currentApp==='connection'){const k=e.key.toLowerCase();if(k==='q')showApp('home');const m={a:'auto',h:'home',w:'work',e:'edit'}[k];if(m)networkPreview(m);return;}
     if(currentApp==='home'){if(e.key.toLowerCase()==='m')showApp('music');if(e.key.toLowerCase()==='r')showApp('radio');if(e.key.toLowerCase()==='a')showApp('companion');return;}
     if(currentApp==='companion'&&e.key.toLowerCase()==='q'){e.preventDefault();showApp('home');return;}
     if(currentApp!=='music')return;

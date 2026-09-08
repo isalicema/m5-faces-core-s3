@@ -40,6 +40,9 @@ void draw(){
     menu.fillSprite(0x18E4);menu.setTextWrap(false);
     menu.drawJpg(homeStageStart,homeStageEnd-homeStageStart,0,0);
     menu.setFont(music_fonts::large());text(16,12,"FACES");
+    int connectionX=16+menu.textWidth("FACES");
+    // Optical adjustment: connection label sits 1px below geometric centre.
+    menu.setFont(music_fonts::small());text(connectionX,17," · S连接");
     menu.setFont(music_fonts::small());faces_power::drawBattery(menu,homePower,304,17);
     for(const auto& c:home_layout::cards){
         menu.setFont(music_fonts::large());text(c.titleX,c.titleY,c.title);
@@ -47,6 +50,7 @@ void draw(){
         text(c.subtitleX,c.subtitleY,c.subtitle,menu.color565(color>>16,(color>>8)&255,color&255));
         menu.setFont(music_fonts::small());text(c.keyX+(18-menu.textWidth(c.key))/2,c.keyY+1,c.key);
     }
+    menu.setFont(music_fonts::small());
     const char* hint=keyboardOK?home_layout::hint:"轻触选择 · 正在连接键盘";
     text((320-menu.textWidth(hint))/2,220,hint,0xA575);
     menu.pushSprite(0,0);
@@ -66,6 +70,7 @@ bool inputReady(){return int32_t(millis()-readyAt)>=0;}
 }
 void setup(){
     active=suite::consume(bootTicket,esp_reset_reason()==ESP_RST_SW);
+    if(active==suite::App::Connection){connection_app::setup();readyAt=millis()+700;return;}
     if(active==suite::App::Music){cloud_app::setup();readyAt=millis()+700;return;}
     if(active==suite::App::Companion){companion_app::setup();readyAt=millis()+700;return;}
     if(active==suite::App::Radio){radio_app::setup();readyAt=millis()+700;return;}
@@ -83,6 +88,7 @@ void setup(){
     faces_ota::acceptBoot(fontsOK);faces_ota::begin();lastInput=millis();
 }
 void loop(){
+    if(active==suite::App::Connection){connection_app::loop();return;}
     if(active==suite::App::Music){cloud_app::loop();return;}
     if(active==suite::App::Companion){companion_app::loop();return;}
     if(active==suite::App::Radio){radio_app::loop();return;}

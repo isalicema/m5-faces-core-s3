@@ -24,6 +24,9 @@
 
 #include "Launcher.h"
 #ifdef FACES_SUITE
+#include "FacesNetwork.h"
+#endif
+#ifdef FACES_SUITE
 namespace cloud_app {
 #endif
 
@@ -114,6 +117,10 @@ void worker(void*) {
     music::SyncCadence sync;
     bool wifiReported=false;
     for (;;) {
+#ifdef FACES_SUITE
+        faces_network::tick();host=faces_network::host();token=faces_network::token();bridgePort=faces_network::port();
+        if(host.isEmpty()||token.isEmpty()){vTaskDelay(pdMS_TO_TICKS(100));continue;}
+#endif
         if (WiFi.status()!=WL_CONNECTED) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
         if(!wifiReported){wifiReported=true;Serial.printf("CONNECT wifi_ms=%lu\n",(unsigned long)(millis()-connectionStarted));}
         Command cmd;
@@ -457,6 +464,9 @@ bool connectKeyboard(){
     input=DirectInput{};indicators.reset();syncIndicators();return true;
 }
 void startPortal(){
+#ifdef FACES_SUITE
+    suite::open(suite::App::Connection);
+#else
     setupMode=true; WiFi.mode(WIFI_AP_STA);
     apName="Faces-Music-"+String(uint32_t(ESP.getEfuseMac()),HEX).substring(0,4);
     char pass[12];snprintf(pass,sizeof(pass),"%08lx",(unsigned long)esp_random());apPass=pass;
@@ -470,6 +480,7 @@ void startPortal(){
         prefs.putString("ssid",s);prefs.putString("pass",p);prefs.putString("host",h);prefs.putString("token",t);prefs.putUShort("port",port);
         portal.send(200,"text/plain; charset=utf-8","已保存，正在重新连接。");rebootAt=millis()+1000;
     });portal.begin();dirty=true;
+#endif
 }
 }
 void setup(){
@@ -480,6 +491,11 @@ void setup(){
     connectionStarted=millis();
     stateLock=xSemaphoreCreateMutex();queue=xQueueCreate(1,sizeof(Command));
     if(!stateLock||!queue){M5.Display.print("Memory error");while(true)delay(1000);}
+#ifdef FACES_SUITE
+    faces_network::begin();
+    if(!faces_network::hasWifi()||!faces_network::hasBridge())suite::open(suite::App::Connection);
+    if(xTaskCreatePinnedToCore(worker,"music-bridge",16384,nullptr,1,nullptr,0)!=pdPASS)message("无法启动连接任务");
+#else
     prefs.begin("faces-music",false);
     ssid=prefs.getString("ssid");password=prefs.getString("pass");host=prefs.getString("host");token=prefs.getString("token");bridgePort=prefs.getUShort("port",8766);
     // Reuse only Wi-Fi from the radio namespace; never mutate its configuration.
@@ -489,6 +505,7 @@ void setup(){
     if(!ssid.isEmpty())WiFi.begin(ssid.c_str(),password.c_str());
     if(!host.isEmpty()&&!token.isEmpty()&&!ssid.isEmpty())
         if(xTaskCreatePinnedToCore(worker,"music-bridge",16384,nullptr,1,nullptr,0)!=pdPASS)message("无法启动连接任务");
+#endif
     faces_lights::begin(); // Sends black; ambient flow needs an explicit L press.
     M5.Display.setRotation(1);M5.Display.setBrightness(85);
     canvas.setColorDepth(16);if(!canvas.createSprite(320,240)){while(true)delay(1000);}
@@ -501,7 +518,9 @@ void setup(){
     stageCanvas.setColorDepth(16);stageOK=stageCanvas.createSprite(320,240)!=nullptr;
     if(!M5.In_I2C.isEnabled())M5.In_I2C.begin(I2C_NUM_1,12,11);
     keyboardOK=connectKeyboard();
+#ifndef FACES_SUITE
     if(host.isEmpty()||token.isEmpty()||ssid.isEmpty())startPortal();
+#endif
     Serial.println("BOOT faces-music 0.1 / speaker disabled / LED GPIO5 off until L");draw();
 }
 void loop(){

@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from .backend import MusicBackend, ROOT
 from .lyrics import LyricsService
+from .discovery import DiscoveryResponder
 from .ota import FirmwareCatalog
 
 
@@ -127,10 +128,18 @@ def main():
     token = load_token(args.config)
     backend = MusicBackend(lyrics=LyricsService())
     server = make_server(backend, token, "0.0.0.0" if args.lan else "127.0.0.1", args.port, FirmwareCatalog(args.ota_directory))
+    discovery = None
+    if args.lan:
+        try:
+            discovery = DiscoveryResponder("0.0.0.0", args.port, token); discovery.start()
+        except OSError:
+            print("Faces discovery unavailable; configured IP remains usable", flush=True)
     worker = threading.Thread(target=backend.poll, daemon=True); worker.start()
     print(f"Faces Music preview: http://127.0.0.1:{args.port} | LAN {'on' if args.lan else 'off'}", flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
-    finally: backend.stop.set(); backend.wake.set(); backend.lyrics.close(); server.server_close(); worker.join(timeout=5)
+    finally:
+        if discovery: discovery.close()
+        backend.stop.set(); backend.wake.set(); backend.lyrics.close(); server.server_close(); worker.join(timeout=5)
 
 if __name__ == "__main__": main()

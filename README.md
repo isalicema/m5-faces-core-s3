@@ -22,8 +22,8 @@ player, and a small on-device companion into one project.
 
 ## Included
 
-- `suite` firmware launches Music Remote (`M`), Radio (`R`), and Companion
-  (`A`); press `SYM + 0` to return to the launcher.
+- `suite` firmware launches Music Remote (`M`), Radio (`R`), Companion (`A`),
+  and Connection Center (`S`); press `SYM + 0` to return to the launcher.
 - The optional Mac music bridge provides a pairing-token protected browser
   preview and supports Apple Music and NetEase Cloud Music metadata and
   playback actions. Audio stays on the Mac.
@@ -34,6 +34,10 @@ player, and a small on-device companion into one project.
 
 - **Launcher:** a three-card home screen for Music Remote, Internet Radio, and
   Companion. After three minutes without input, it opens Companion automatically.
+- **Connection Center:** a shared Wi-Fi and Bridge setup flow for Music Remote,
+  Internet Radio, and OTA. It can retain two network profiles, choose one
+  automatically or manually, and opens a temporary, password-protected setup
+  hotspot when editing is needed.
 - **Music Remote:** shows source, artwork, playback state, progress, favourite
   status, themed background, and synchronised lyrics when a match is available.
   It controls playback on the Mac; it does not stream or decode audio itself.
@@ -49,10 +53,11 @@ player, and a small on-device companion into one project.
 
 | Context | Keyboard | Touch / device behavior |
 | --- | --- | --- |
-| Home | `M` Music, `R` Radio, `A` Companion | Tap a card to enter its app. |
+| Home | `S` Connection Center, `M` Music, `R` Radio, `A` Companion | Tap a card to enter its app, or tap the `S Connection` header. |
 | All apps | `SYM + 0` / `ESC` returns home | Use the visible home/back target. |
-| Music | `J` previous, `Space` play/pause, `K` next, `H` favourite, `C` repeat one, `V` repeat all | Tap the corresponding controls; `S` opens device setup. |
-| Radio | `ESC` returns home | Select a station on the device; playback is local to the hardware. |
+| Connection Center | `A` automatic, `H` home, `W` work, `E` edit, `Q` / `ESC` home | Pick a saved network or open the temporary setup hotspot. |
+| Music | `J` previous, `Space` play/pause, `K` next, `H` favourite, `C` repeat one, `V` repeat all; `S` Connection Center | Tap the corresponding controls. |
+| Radio | `ESC` returns home | Select a station on the device; use the Wi-Fi target to open Connection Center. Playback is local to the hardware. |
 | Companion | `Q` or `ESC` returns home | Touch the face; movement and proximity affect its reactions on supported hardware. |
 
 ## Build and run
@@ -76,7 +81,9 @@ The Bridge is optional and never opens a USB serial port:
 
 Open the displayed localhost URL for the preview. For a paired device on a
 trusted LAN, restart with `./tools/start_music.command --lan`, then enter the
-Bridge address, port, and pairing token through the device setup screen.
+Bridge address, port, and pairing token through Connection Center. When LAN
+mode is enabled, a paired device can also discover the Bridge automatically;
+the saved address remains a fallback.
 
 To publish an OTA candidate, provide the MAC address of the device you control
 at publish time. The address is stored only in ignored local OTA metadata and
@@ -127,8 +134,8 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 
 ## 包含内容
 
-- `suite` 整合固件：按 `M` 进入音乐遥控器、`R` 进入收音机、`A` 进入小伙伴；
-  `SYM + 0` 返回主菜单。
+- `suite` 整合固件：按 `S` 进入连接中心、`M` 进入音乐遥控器、`R` 进入收音机、
+  `A` 进入小伙伴；`SYM + 0` 返回主菜单。
 - 可选的 Mac 音乐桥接：提供带配对令牌保护的浏览器预览，可读取并控制 Apple
   Music 与网易云音乐；声音始终由 Mac 播放。
 - 包括 CoreS3 触控、Keyboard3 指示灯、电池与息屏 UI、收音机、OTA、小伙伴逻辑
@@ -138,6 +145,8 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 
 - **主菜单：** 三张卡片分别进入音乐遥控器、网络收音机和小伙伴；连续三分钟没有
   输入时，自动进入小伙伴。
+- **连接中心：** 音乐遥控器、网络收音机与 OTA 共用的 Wi-Fi 和 Bridge 配置入口。
+  可保存两套网络、自动或手动选择；需要修改时，会开启带临时随机密码的配网热点。
 - **音乐遥控器：** 显示播放来源、封面、播放状态、进度、喜欢状态、主题背景和可匹配
   的同步歌词。它控制 Mac 播放，不在设备端串流或解码音频。
 - **网络收音机：** 设备自行连接 Wi-Fi，并通过自身扬声器播放内置电台；浏览器页面只
@@ -151,10 +160,11 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 
 | 场景 | 键盘 | 触屏 / 设备交互 |
 | --- | --- | --- |
-| 主菜单 | `M` 音乐、`R` 收音机、`A` 小伙伴 | 点击对应卡片进入。 |
+| 主菜单 | `S` 连接中心、`M` 音乐、`R` 收音机、`A` 小伙伴 | 点击对应卡片进入，或点击顶部的 `S 连接`。 |
 | 所有 App | `SYM + 0` / `ESC` 返回主菜单 | 点击页面中可见的返回/主菜单区域。 |
-| 音乐遥控器 | `J` 上一首、`空格` 播放/暂停、`K` 下一首、`H` 喜欢、`C` 单曲循环、`V` 列表循环 | 点击对应控件；`S` 打开设备设置。 |
-| 网络收音机 | `ESC` 返回主菜单 | 在设备上选择电台，声音由硬件本地播放。 |
+| 连接中心 | `A` 自动、`H` 家庭、`W` 公司、`E` 编辑、`Q` / `ESC` 返回 | 选择已保存网络，或开启临时配网热点。 |
+| 音乐遥控器 | `J` 上一首、`空格` 播放/暂停、`K` 下一首、`H` 喜欢、`C` 单曲循环、`V` 列表循环；`S` 连接中心 | 点击对应控件。 |
+| 网络收音机 | `ESC` 返回主菜单 | 在设备上选择电台；点击 Wi-Fi 区域进入连接中心。声音由硬件本地播放。 |
 | 小伙伴 | `Q` 或 `ESC` 返回主菜单 | 触摸小脸；支持的硬件会根据运动和接近状态作出反应。 |
 
 ## 构建与运行
@@ -175,8 +185,9 @@ pio run -e suite
 ```
 
 在浏览器打开终端显示的 localhost 地址即可预览。若要让已配对的设备通过受信任
-局域网连接，请用 `./tools/start_music.command --lan` 重启服务，再在设备设置页填写
-Bridge 地址、端口和配对令牌。
+局域网连接，请用 `./tools/start_music.command --lan` 重启服务，再在连接中心填写
+Bridge 地址、端口和配对令牌。开启 LAN 模式后，已配对设备也可自动发现 Bridge；
+手填地址仍会保留为后备方式。
 
 发布 OTA 候选包时，需要显式传入你所控制设备的 MAC 地址；该地址只保存在被
 Git 忽略的本地 OTA 元数据里，并与固件清单绑定：

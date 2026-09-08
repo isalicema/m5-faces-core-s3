@@ -4,6 +4,7 @@
 #include "FacesPower.h"
 #include <M5Unified.h>
 #include <WiFi.h>
+#include "FacesNetwork.h"
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <cJSON.h>
@@ -106,15 +107,14 @@ void acceptBoot(bool healthy){
 }
 void begin(){
     Serial.println(marker);
-    Preferences p;if(!p.begin("faces-music",true))return;
-    String ssid=p.getString("ssid"),password=p.getString("pass");host=p.getString("host");token=p.getString("token");port=p.getUShort("port",8766);p.end();
-    IPAddress ip;configured=!ssid.isEmpty()&&ip.fromString(host)&&!token.isEmpty()&&port>0;
-    if(!configured)return;
+    faces_network::begin();configured=faces_network::hasWifi()&&faces_network::hasBridge();
+    Preferences p;
     if(p.begin("faces-ota",true)){lastSha=p.getString("last_sha");p.end();}
-    WiFi.mode(WIFI_STA);WiFi.setSleep(true);WiFi.setAutoReconnect(true);WiFi.begin(ssid.c_str(),password.c_str());
     lastCheck=millis()-25000; // First idle check after about five seconds.
 }
 bool tick(bool idle){
+    faces_network::tick();host=faces_network::host();token=faces_network::token();port=faces_network::port();
+    if(host.isEmpty()||token.isEmpty())return false;
     if(!idle||!configured||millis()-lastCheck<30000||WiFi.status()!=WL_CONNECTED)return false;
     lastCheck=millis();
     // Restore the boot receipt after a Bridge restart, without a device reboot.

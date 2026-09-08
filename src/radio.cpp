@@ -20,6 +20,9 @@
 
 #include "Launcher.h"
 #ifdef FACES_SUITE
+#include "FacesNetwork.h"
+#endif
+#ifdef FACES_SUITE
 namespace radio_app {
 #endif
 
@@ -274,6 +277,10 @@ void draw() {
 
 void closePortal() { server.stop(); WiFi.softAPdisconnect(true); WiFi.mode(WIFI_STA); portal = false; dirty = true; }
 void startPortal() {
+#ifdef FACES_SUITE
+    wanted.store(-1);suite::open(suite::App::Connection);
+#else
+
     if (portal) return;
     wanted.store(-1);
     apName = "Faces-Radio-" + WiFi.macAddress().substring(12);
@@ -296,7 +303,9 @@ void startPortal() {
         restartAt = millis() + 1500;
     });
     server.begin(); dirty = true;
+#endif
 }
+
 bool connectKeyboard() {
     if (keyboard.begin(&M5.In_I2C, M5FACES_BOTTOM3_ADDR, 100000) != M5FACES_OK) return false;
     m5faces_mode_t mode;
@@ -378,6 +387,10 @@ void setup() {
     speakerOK.store(M5.Speaker.begin());
     if (!M5.In_I2C.isEnabled()) M5.In_I2C.begin(I2C_NUM_1, 12, 11);
     keyboardReady = connectKeyboard();
+#ifdef FACES_SUITE
+    faces_network::begin(false);
+    if(!faces_network::hasWifi())startPortal();
+#else
     WiFi.mode(WIFI_STA); WiFi.setSleep(false); WiFi.setAutoReconnect(true);
     String ssid = prefs.getString("ssid"), password = prefs.getString("pass");
 #ifdef FACES_SUITE
@@ -385,6 +398,7 @@ void setup() {
 #endif
     if (!ssid.isEmpty()) { WiFi.begin(ssid.c_str(), password.c_str()); connecting = true; connectAt = millis(); }
     else startPortal();
+#endif
     if (xTaskCreatePinnedToCore(audioTask, "radio-audio", 8192, nullptr, 2, nullptr, 0) != pdPASS) speakerOK.store(false);
     Serial.printf("BOOT faces-radio 0.3 board=%d keyboard=%d speaker=%d lights=%d pin=5 heap=%u\n", int(M5.getBoard()), keyboardReady, speakerOK.load(), lightsReady, ESP.getFreeHeap());
     draw();
@@ -403,6 +417,9 @@ void loop() {
         sideLights.setColors(colors, 0, 10); sideLights.display();
     }
     #endif
+#ifdef FACES_SUITE
+    if(!portal)faces_network::tick();
+#endif
     if (portal) server.handleClient();
     if (restartAt && int32_t(now - restartAt) >= 0){
 #ifdef FACES_SUITE
@@ -450,7 +467,13 @@ void loop() {
             } else {
                 if (touch.x < 112) { if (model.choose()) playSelected(); }
                 else if (touch.x < 214) model.nowPlaying = true;
-                else settings = true;
+                else {
+#ifdef FACES_SUITE
+                    startPortal();
+#else
+                    settings=true;
+#endif
+                }
             }
         } else if (!settings && !model.nowPlaying && touch.y >= 75 && touch.y < 189) {
             int row = (touch.y - 75) / 38;
