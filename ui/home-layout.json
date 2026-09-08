@@ -1,0 +1,8 @@
+{
+  "cards": [
+    {"id":"openMusic","style":"cloud-card","x":14,"y":42,"w":292,"h":78,"title":"音乐遥控器","subtitle":"MAC MUSIC","key":"M","titleX":28,"titleY":54,"subtitleX":28,"subtitleY":80,"keyX":176,"keyY":54,"subtitleColor":"#bbd4ca"},
+    {"id":"openRadio","style":"radio-card","x":14,"y":128,"w":142,"h":84,"title":"网络收音机","subtitle":"INTERNET RADIO","key":"R","titleX":26,"titleY":171,"subtitleX":26,"subtitleY":195,"keyX":126,"keyY":139,"subtitleColor":"#c3b394"},
+    {"id":"openCompanion","style":"companion-card","x":164,"y":128,"w":142,"h":84,"title":"小伙伴","subtitle":"STACKCHAN","key":"A","titleX":176,"titleY":171,"subtitleX":176,"subtitleY":195,"keyX":276,"keyY":139,"subtitleColor":"#bdbab8"}
+  ],
+  "hint":"闲置3分钟，进入小伙伴"
+}

@@ -1,0 +1,40 @@
+<!-- BEGIN COMPANION PREVIEW -->
+<script>
+(()=>{
+ const canvas=document.getElementById('companionCanvas'),ctx=canvas.getContext('2d');
+ const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ let started=0,last=0,active=0,petAt=-5000,lookX=0,lookY=0,x=0,y=0,mouth=0;
+ let wasVisible=false,lastDraw=0,motionAt=-5000,near=false;
+ document.getElementById('companionNearDemo').onclick=()=>{near=!near;active=performance.now();document.getElementById('companionNearDemo').textContent=near?'预览：移开手':'预览：靠近感应';};
+ canvas.addEventListener('pointermove',e=>{if(e.pointerType!=='mouse')return;const r=canvas.getBoundingClientRect();lookX=Math.max(-1,Math.min(1,((e.clientX-r.left)/r.width*2-1)/.65))*28;lookY=Math.max(-1,Math.min(1,((e.clientY-r.top)/r.height*2-1)/.75))*18;motionAt=active=performance.now();});
+ canvas.addEventListener('pointerdown',e=>{petAt=active=performance.now();const r=canvas.getBoundingClientRect();lookX=(e.clientX-r.left)/r.width*32-16;lookY=(e.clientY-r.top)/r.height*24-12;});
+ function line(x1,y1,x2,y2,w,color='#fff'){ctx.strokeStyle=color;ctx.lineWidth=w;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
+ function frame(now){
+  requestAnimationFrame(frame);
+  const visible=document.getElementById('screen').dataset.app==='companion';
+  if(!visible){wasVisible=false;near=false;document.getElementById('companionNearDemo').textContent='预览：靠近感应';return;}
+  if(!wasVisible){started=active=last=now;petAt=motionAt=-5000;x=y=mouth=lookX=lookY=0;wasVisible=true;}
+  if(now-lastDraw<(reduce?150:33))return;lastDraw=now;
+  let t=now-started,dt=Math.min(now-last,100)/1000;last=now;
+  const sleeping=now-active>45000,happy=now-petAt<2200,curious=now-motionAt<1100&&!happy;
+  let phase=t%5600-5400,blink=phase<0||reduce?1:1-.9*Math.sin(phase*Math.PI/200);
+  const openness=(sleeping?.24:happy?.72:1)*blink;
+  let tx=sleeping?0:Math.max(-28,Math.min(28,lookX+(reduce?0:Math.sin(t*.00042)*4))),ty=lookY+(reduce?0:Math.sin(t*Math.PI*2/6600)*2.56);
+  if(near){tx=0;ty=8;active=now;}
+  const blend=reduce?1:1-Math.exp(-dt*7);x+=(tx-x)*blend;y+=(ty-y)*blend;mouth+=((happy?.25:curious?.55:sleeping?.05:0)-mouth)*blend;
+  if(now-motionAt>1600){lookX*=Math.exp(-dt*1.2);lookY*=Math.exp(-dt*1.2);}
+  ctx.fillStyle='#000';ctx.fillRect(0,0,320,240);ctx.fillStyle='#fff';
+  for(const side of [-1,1]){const ex=160+x+70*side,ey=104+y;
+   if(near){line(ex-8,ey-side*2,ex+8,ey+side*2,3);}
+   else if(happy){ctx.beginPath();ctx.strokeStyle='#fff';ctx.lineWidth=3*openness+1;ctx.lineCap='round';for(let i=-8;i<=8;i++){const yy=ey+i*i/14;i===-8?ctx.moveTo(ex+i,yy):ctx.lineTo(ex+i,yy);}ctx.stroke();}
+   else{const size=curious?26:20,h=Math.max(2,size*openness);ctx.beginPath();ctx.roundRect(ex-size/2,ey-h/2,size,h,Math.min(size/2,h/2));ctx.fill();}
+  }
+  const w=90-mouth*30,h=6+mouth*44;ctx.beginPath();if(near)ctx.arc(160+x,146+y,6,0,Math.PI*2);else ctx.roundRect(160+x-w/2,146+y-h/2,w,h,Math.max(1,mouth*16));ctx.fill();
+  if(happy||near)for(const side of [-1,1])for(let i=0;i<3;i++)line(160+x+side*84+i*5,128+y,158+x+side*84+i*5,134+y,1.6,near?'#f65352':'#eed6bd');
+  ctx.font='12px -apple-system, sans-serif';ctx.fillStyle=now-active<6000?'#848484':'#212021';ctx.textBaseline='top';ctx.textAlign='center';
+  if(now-active<6000)ctx.fillText('摸摸我 · Q 返回',160,215);
+ }
+ requestAnimationFrame(frame);
+})();
+</script>
+<!-- END COMPANION PREVIEW -->

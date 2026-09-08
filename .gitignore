@@ -1,0 +1,16 @@
+.pio/
+backups/
+evidence/
+build/
+.local/
+__pycache__/
+.DS_Store
+*.py[cod]
+*.log
+*.bin
+*.part
+*.elf
+*.map
+*.tmp
+.env
+.env.*

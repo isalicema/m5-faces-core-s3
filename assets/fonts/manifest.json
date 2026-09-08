@@ -1,0 +1,38 @@
+{
+  "source": "https://github.com/notofonts/noto-cjk/blob/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+  "source_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+  "license": "OFL.txt",
+  "glyphs": 7986,
+  "fonts": [
+    {
+      "file": "faces10.vlw",
+      "glyphs": 114,
+      "source_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+      "size": 10,
+      "bytes": 9432,
+      "sha256": "f1e1815dd91faca0873189b06dca60fd4c6785c827330a5cc25e51cf48f344ab",
+      "ascent": 10,
+      "descent": 3
+    },
+    {
+      "file": "faces12.vlw",
+      "glyphs": 7986,
+      "source_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+      "size": 12,
+      "bytes": 1385196,
+      "sha256": "5184735e345fc42dcc9aa89fbf2c878beb59d2d221a5ce4aa914a7740ac4d8e8",
+      "ascent": 14,
+      "descent": 4
+    },
+    {
+      "file": "faces16.vlw",
+      "glyphs": 7986,
+      "source_sha256": "b5f0d1a190a7f9b43c310a8850630af12553df32c4c050543f9059732d9b4c0a",
+      "size": 16,
+      "bytes": 2272963,
+      "sha256": "edfce493c6e085304b3f4f2e58605ee01ec90a52e621f0ef22ba1c3b1679f768",
+      "ascent": 19,
+      "descent": 5
+    }
+  ]
+}
