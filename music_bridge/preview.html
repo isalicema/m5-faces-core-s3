@@ -24,12 +24,16 @@
 .lyric span{display:inline-block;will-change:transform;transition:transform 200ms linear}
 @media(prefers-reduced-motion:reduce){.lyric span{transition:none}}
 
-.screen[data-app="home"],.screen[data-app="radio"]{background:#1c252c!important}
+.screen[data-app="home"]{background:#1c252c!important}
 .screen[data-app="home"]>:not(.launcher-view),.screen[data-app="radio"]>:not(.radio-view){display:none}
 .screen[data-app="music"]>.launcher-view,.screen[data-app="music"]>.radio-view{display:none}
 .launcher-view,.radio-view{min-height:250px;padding:12px 12px 10px}.launcher-title{font-size:13px;letter-spacing:.03em}.launcher-view p,.radio-view p{font-size:11px;color:#b6c3c4;margin:7px 0 16px}
 .app-card{display:flex;align-items:center;gap:12px;width:100%;height:69px;border:1px solid #ffffff15;border-radius:10px;padding:10px;color:#f3f0e5;text-align:left;margin-bottom:12px}.app-card>span:nth-child(2){flex:1}.app-card strong{display:block;font-size:15px;font-weight:550}.app-card small{display:block;font-size:10px;opacity:.8;margin-top:8px}.app-icon{font-size:32px;font-weight:300;color:#e6d5a2}.cloud-card{background:#304956}.radio-card{background:#493c35}.app-card:hover{filter:brightness(1.14)}.launcher-hint{font-size:10px;color:#b9c1c2;margin-top:14px}
 .source-group{display:flex;align-items:center;gap:5px}#homeButton{border:0;padding:0 3px;background:transparent;color:inherit;font-size:18px;line-height:11px}.radio-head{display:flex;justify-content:space-between;font-size:13px}.radio-head button{border:0;background:transparent;color:#e9dfca;font-size:11px}.station-preview{padding:10px 0;border-top:1px solid #ffffff14}.station-preview strong{display:block;font-size:14px}.station-preview span,.radio-view small{font-size:10px;color:#c0c6c4}
+.screen[data-app="radio"]{width:340px;height:260px;background:#f7f3ef!important;color:#181c21}
+.screen[data-app="radio"] .radio-view{width:320px;height:240px;min-height:0;padding:12px;background:#f7f3ef;color:#181c21}
+.screen[data-app="radio"] .radio-head{font-size:13px;color:#181c21}.screen[data-app="radio"] .radio-head button{color:#737173}
+.screen[data-app="radio"] .radio-view p{color:#737173}.screen[data-app="radio"] .station-preview{border-color:#cecbca}.screen[data-app="radio"] .station-preview strong{color:#181c21}.screen[data-app="radio"] .station-preview span,.screen[data-app="radio"] .radio-view small{color:#737173}
 [hidden]{display:none!important}
 /* BEGIN SHARED MUSIC LAYOUT */
 .screen[data-app="music"]{width:340px;height:260px}
