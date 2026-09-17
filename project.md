@@ -6,8 +6,8 @@
 ## 当前状态
 
 - **目标：** 维护可公开构建的 M5 Faces/CoreS3 固件与可选 Mac 音乐 Bridge，提供 Music Remote、Internet Radio、Companion 和 Connection Center。
-- **有效公开版本：** `2859def`（Paper UI 同步与发布记录已推送至 `main`）。
-- **当前工作：** 本轮同步已完成；后续维护继续保留公开版动态 OTA 设备绑定、凭据隔离和纸面 Radio 设计。
+- **有效公开版本：** `9aab206`（Music README 预览更新及其发布记录已推送至 `main`）。
+- **当前工作：** 正在以版本化资源地址刷新 Music Remote README 配图，以避开同名图片的渲染缓存。
 - **公开边界：** 不纳入 `.local/`、`.pio/`、`backups/`、`evidence/`、`build/`、设备或网络标识、令牌、私有路径、日志、私有固件或恢复包。任何公开固件都必须由本树重新构建。
 - **验证状态：** 本轮尚未完成；构建、测试、提交、推送、烧录和实机观察分别记录，互不替代。
 
@@ -34,3 +34,7 @@ Alice 授权的范围落实为 Home、Music Remote、Internet Radio 的纸面 UI
 ### PUB-FACES-004 — 2026-09-18：Music README 预览更正
 
 Alice 指出 README 的 Music Remote 配图仍是旧版。星子使用本公开树的本地 Bridge 页面，以当前读取到的网易云音乐元数据、封面和歌词行截取 340×260 的核心屏幕区域，替换 `assets/preview-music.png`；不保留浏览器外围留白，也不写入任何控制操作。图片经尺寸、哈希和目视检查确认。图片更新已提交为 `6e6fc2f` 并推送至 `origin/main`，远端 SHA 已核对一致；未涉及固件构建、烧录或新的设备验收。
+
+### PUB-FACES-005 — 2026-09-18：Music README 缓存刷新
+
+Alice 反馈 GitHub README 页面仍渲染出旧的深色 Music Remote 图。星子比对公开远端 raw 图片与当前公开树的 SHA-256，二者一致，确认图片提交未遗漏，问题仅为同名资源的渲染缓存。为使 README 请求新资源，新增内容相同且已验证的 `assets/preview-music-paper.png`，并将 README 的 Music Remote 图片引用切换到该版本化路径。此项不改动固件或 Bridge 行为；提交、推送与远端核对待后续记录。
