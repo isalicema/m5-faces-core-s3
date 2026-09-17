@@ -33,4 +33,4 @@ Alice 授权的范围落实为 Home、Music Remote、Internet Radio 的纸面 UI
 
 ### PUB-FACES-004 — 2026-09-18：Music README 预览更正
 
-Alice 指出 README 的 Music Remote 配图仍是旧版。星子使用本公开树的本地 Bridge 页面，以当前读取到的网易云音乐元数据、封面和歌词行截取 340×260 的核心屏幕区域，替换 `assets/preview-music.png`；不保留浏览器外围留白，也不写入任何控制操作。图片经尺寸、哈希和目视检查确认。该图片更新待提交与推送；未涉及固件构建、烧录或新的设备验收。
+Alice 指出 README 的 Music Remote 配图仍是旧版。星子使用本公开树的本地 Bridge 页面，以当前读取到的网易云音乐元数据、封面和歌词行截取 340×260 的核心屏幕区域，替换 `assets/preview-music.png`；不保留浏览器外围留白，也不写入任何控制操作。图片经尺寸、哈希和目视检查确认。图片更新已提交为 `6e6fc2f` 并推送至 `origin/main`，远端 SHA 已核对一致；未涉及固件构建、烧录或新的设备验收。
