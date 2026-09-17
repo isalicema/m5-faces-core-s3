@@ -6,7 +6,7 @@
 ## 当前状态
 
 - **目标：** 维护可公开构建的 M5 Faces/CoreS3 固件与可选 Mac 音乐 Bridge，提供 Music Remote、Internet Radio、Companion 和 Connection Center。
-- **有效公开版本：** `8071dfb`（Paper UI 与稳定性同步已推送至 `main`）。
+- **有效公开版本：** `2859def`（Paper UI 同步与发布记录已推送至 `main`）。
 - **当前工作：** 本轮同步已完成；后续维护继续保留公开版动态 OTA 设备绑定、凭据隔离和纸面 Radio 设计。
 - **公开边界：** 不纳入 `.local/`、`.pio/`、`backups/`、`evidence/`、`build/`、设备或网络标识、令牌、私有路径、日志、私有固件或恢复包。任何公开固件都必须由本树重新构建。
 - **验证状态：** 本轮尚未完成；构建、测试、提交、推送、烧录和实机观察分别记录，互不替代。
@@ -30,3 +30,7 @@ Alice 授权的范围落实为 Home、Music Remote、Internet Radio 的纸面 UI
 ### PUB-FACES-003 — 2026-09-18：提交与推送
 
 本轮公开源码、素材、测试和文档已由 Alice 既有 Git 身份提交为 `8071dfb`（`Sync paper UI and reliability updates`，含 Codex 协作署名），并推送到 `origin/main`。提交前暂存范围排除了私有目录、构建输出、固件和设备信息；静态检查通过。原生 Git 的 dry-run 探针一度遇到 TLS 传输错误，随后 GitHub 只读身份核验成功，原生 Git 推送与 `ls-remote` 均确认远端 `main` 为同一 SHA。此记录本身待提交，以保存该发布证据。
+
+### PUB-FACES-004 — 2026-09-18：Music README 预览更正
+
+Alice 指出 README 的 Music Remote 配图仍是旧版。星子使用本公开树的本地 Bridge 页面，以当前读取到的网易云音乐元数据、封面和歌词行截取 340×260 的核心屏幕区域，替换 `assets/preview-music.png`；不保留浏览器外围留白，也不写入任何控制操作。图片经尺寸、哈希和目视检查确认。该图片更新待提交与推送；未涉及固件构建、烧录或新的设备验收。
