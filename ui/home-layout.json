@@ -1,8 +1,80 @@
 {
+  "theme": "paper",
+  "width": 320,
+  "height": 240,
+  "paper": "#f4e7d3",
+  "ink": "#111111",
+  "connection": {
+    "x": 0,
+    "y": 0,
+    "w": 190,
+    "h": 34
+  },
+  "power": {
+    "right": 312,
+    "y": 11
+  },
   "cards": [
-    {"id":"openMusic","style":"cloud-card","x":14,"y":42,"w":292,"h":78,"title":"音乐遥控器","subtitle":"MAC MUSIC","key":"M","titleX":28,"titleY":54,"subtitleX":28,"subtitleY":80,"keyX":176,"keyY":54,"subtitleColor":"#bbd4ca"},
-    {"id":"openRadio","style":"radio-card","x":14,"y":128,"w":142,"h":84,"title":"网络收音机","subtitle":"INTERNET RADIO","key":"R","titleX":26,"titleY":171,"subtitleX":26,"subtitleY":195,"keyX":126,"keyY":139,"subtitleColor":"#c3b394"},
-    {"id":"openCompanion","style":"companion-card","x":164,"y":128,"w":142,"h":84,"title":"小伙伴","subtitle":"STACKCHAN","key":"A","titleX":176,"titleY":171,"subtitleX":176,"subtitleY":195,"keyX":276,"keyY":139,"subtitleColor":"#bdbab8"}
+    {
+      "id": "openMusic",
+      "style": "cloud-card",
+      "x": 8,
+      "y": 34,
+      "w": 304,
+      "h": 92,
+      "title": "MUSIC",
+      "subtitle": "MAC REMOTE",
+      "key": "M",
+      "titleSize": 42,
+      "titleX": 19,
+      "titleY": 46,
+      "subtitleX": 19,
+      "subtitleY": 86,
+      "keyX": 18,
+      "keyY": 99,
+      "subtitleColor": "#4f4d49",
+      "art": "music-selected-art.png"
+    },
+    {
+      "id": "openRadio",
+      "style": "radio-card",
+      "x": 8,
+      "y": 132,
+      "w": 149,
+      "h": 82,
+      "title": "RADIO",
+      "subtitle": "INTERNET",
+      "key": "R",
+      "titleSize": 29,
+      "titleX": 17,
+      "titleY": 142,
+      "subtitleX": 17,
+      "subtitleY": 175,
+      "keyX": 18,
+      "keyY": 187,
+      "subtitleColor": "#4f4d49",
+      "art": "radio-selected-art.png"
+    },
+    {
+      "id": "openCompanion",
+      "style": "companion-card",
+      "x": 163,
+      "y": 132,
+      "w": 149,
+      "h": 82,
+      "title": "COMPANION",
+      "subtitle": "STACKCHAN",
+      "key": "A",
+      "titleSize": 26,
+      "titleX": 172,
+      "titleY": 143,
+      "subtitleX": 172,
+      "subtitleY": 175,
+      "keyX": 173,
+      "keyY": 187,
+      "subtitleColor": "#4f4d49",
+      "art": "companion-selected-art.png"
+    }
   ],
-  "hint":"闲置3分钟，进入小伙伴"
+  "hint": "IDLE 3 MIN → COMPANION"
 }

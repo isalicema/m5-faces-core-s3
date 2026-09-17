@@ -17,7 +17,7 @@ inline App consume(Ticket& t,bool softwareReset){
 }
 inline App key(uint8_t c){return c=='s'||c=='S'?App::Connection:c=='m'||c=='M'?App::Music:c=='r'||c=='R'?App::Radio:c=='a'||c=='A'?App::Companion:App::Home;}
 inline App touch(int x,int y){
-    if(x>=0&&x<190&&y>=0&&y<42)return App::Connection;
+    if(x>=0&&x<190&&y>=0&&y<home_layout::connectionBottom)return App::Connection;
     for(int i=0;i<3;++i){const auto& c=home_layout::cards[i];
         if(x>=c.x&&x<c.x+c.w&&y>=c.y&&y<c.y+c.h)return App(i+1);
     }

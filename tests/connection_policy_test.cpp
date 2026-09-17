@@ -12,6 +12,18 @@ int main(){using namespace connection_policy;
  assert(next(-1,true,true)==0);assert(next(0,true,true)==1);assert(next(1,true,true)==0);
  assert(next(0,false,true)==1);assert(next(1,true,false)==0);assert(next(1,false,false)==-1);
  assert(next(1,true,true,0)==0);assert(next(0,true,true,1)==1);assert(next(1,false,true,0)==-1);
+ // A failed search must resume without user input, then be schedulable again.
+ RetryWait retry;assert(!retry.waiting()&&!retry.resume(0));
+ retry.start(45000);assert(retry.waiting());
+ assert(!retry.resume(54999));assert(retry.resume(55000));
+ assert(!retry.waiting()&&!retry.resume(55001));
+ retry.start(100000);assert(retry.resume(110000));
+ // Manual choice still selects only that profile after the wait.
+ assert(next(-1,true,true,1)==1);
+ // Success/manual reselection cancel a pending wait immediately.
+ retry.start(200000);retry.reset();assert(!retry.waiting()&&!retry.resume(210000));
+ // millis() wrapping must not permanently stop recovery.
+ retry.start(UINT32_MAX-4999);assert(!retry.resume(4999));assert(retry.resume(5000));
  assert(!validPort(0)&&!validPort(65536)&&validPort(8766));
  assert(suite::key('S')==suite::App::Connection&&suite::key('s')==suite::App::Connection);
  assert(suite::touch(40,20)==suite::App::Connection);assert(suite::touch(260,20)==suite::App::Home);

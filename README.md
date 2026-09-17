@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/preview-home.png" alt="M5 Faces CoreS3 Suite local preview home screen" width="800">
+  <img src="assets/home-stage-preview.png" alt="M5 Faces CoreS3 Suite paper Home screen" width="800">
 </p>
 
 <p align="center">
@@ -10,7 +10,7 @@
 
 | Music Remote / 音乐遥控器 | Internet Radio / 网络收音机 | Companion / 小伙伴 |
 | --- | --- | --- |
-| <img src="assets/preview-music.png" alt="Music Remote preview" width="300"> | <img src="assets/preview-radio.png" alt="Internet Radio preview" width="300"> | <img src="assets/preview-companion.png" alt="Companion preview" width="300"> |
+| <img src="assets/preview-music.png" alt="Music Remote local preview with album art and lyric" width="300"> | <img src="assets/radio-stage-0-preview.png" alt="Internet Radio paper preview" width="300"> | <img src="assets/preview-companion.png" alt="Companion preview" width="300"> |
 
 <a id="english"></a>
 
@@ -32,21 +32,27 @@ player, and a small on-device companion into one project.
 
 ## Features
 
-- **Launcher:** a three-card home screen for Music Remote, Internet Radio, and
-  Companion. After three minutes without input, it opens Companion automatically.
+- **Paper UI:** Home, Music and Radio share a native 320×240 paper layout.
+  Cards use their visible bounds for touch, and a short press paints before it
+  opens the selected app.
+- **Launcher:** three cards for Music Remote, Internet Radio and Companion.
+  It has persistent power status and opens Companion after three minutes without
+  input.
 - **Connection Center:** a shared Wi-Fi and Bridge setup flow for Music Remote,
   Internet Radio, and OTA. It can retain two network profiles, choose one
   automatically or manually, and opens a temporary, password-protected setup
   hotspot when editing is needed.
-- **Music Remote:** shows source, artwork, playback state, progress, favourite
-  status, themed background, and synchronised lyrics when a match is available.
-  It controls playback on the Mac; it does not stream or decode audio itself.
+- **Music Remote:** Apple Music and NetEase Cloud Music metadata, album colour,
+  artwork, playback state, progress, favourite status and synchronised lyrics
+  when a match is available. The UI preserves the last complete artwork/theme
+  while new media is decoding. It controls the Mac; it does not stream or decode
+  audio itself.
 - **Internet Radio:** the device connects to Wi-Fi and plays the built-in radio
   stations through its own speaker. The browser page is a visual preview only.
 - **Companion:** an on-device animated face with touch, motion, proximity, and
   camera-motion responses. The browser preview demonstrates the visual behavior
   without using device sensors.
-- **Power and status:** the home screen renders battery/USB state, and a short
+- **Power and status:** Home, Music and Radio retain battery/USB status. A short
   press of the power key dims or wakes the display without stopping app tasks.
 
 ## Interaction
@@ -57,7 +63,7 @@ player, and a small on-device companion into one project.
 | All apps | `SYM + 0` / `ESC` returns home | Use the visible home/back target. |
 | Connection Center | `A` automatic, `H` home, `W` work, `E` edit, `Q` / `ESC` home | Pick a saved network or open the temporary setup hotspot. |
 | Music | `J` previous, `Space` play/pause, `K` next, `H` favourite, `C` repeat one, `V` repeat all; `S` Connection Center | Tap the corresponding controls. |
-| Radio | `ESC` returns home | Select a station on the device; use the Wi-Fi target to open Connection Center. Playback is local to the hardware. |
+| Radio | `Q` / `ESC` home, `S` Connection Center, `Space` play/pause, `J` / `K` tune, `1`–`3` select a station, `+` / `-` volume | Select a station, use `DEVICE AUDIO` to play/pause, or use the Wi-Fi target. Playback is local to the hardware. |
 | Companion | `Q` or `ESC` returns home | Touch the face; movement and proximity affect its reactions on supported hardware. |
 
 ## Build and run
@@ -143,18 +149,21 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 
 ## 功能概览
 
-- **主菜单：** 三张卡片分别进入音乐遥控器、网络收音机和小伙伴；连续三分钟没有
-  输入时，自动进入小伙伴。
+- **纸面 UI：** 首页、音乐与收音机共用原生 320×240 的纸面排版。卡片的可点区域
+  与可见边界一致，轻点会先显示按下反馈再进入应用。
+- **主菜单：** 三张卡片分别进入音乐遥控器、网络收音机和小伙伴；常驻电量状态，连续
+  三分钟没有输入时自动进入小伙伴。
 - **连接中心：** 音乐遥控器、网络收音机与 OTA 共用的 Wi-Fi 和 Bridge 配置入口。
   可保存两套网络、自动或手动选择；需要修改时，会开启带临时随机密码的配网热点。
-- **音乐遥控器：** 显示播放来源、封面、播放状态、进度、喜欢状态、主题背景和可匹配
-  的同步歌词。它控制 Mac 播放，不在设备端串流或解码音频。
+- **音乐遥控器：** 显示 Apple Music 与网易云音乐来源、封面色彩、播放状态、进度、
+  喜欢状态和可匹配的同步歌词。新媒体尚未解码完成时会保留上一张完整封面与主题，
+  避免闪成空白；它控制 Mac 播放，不在设备端串流或解码音频。
 - **网络收音机：** 设备自行连接 Wi-Fi，并通过自身扬声器播放内置电台；浏览器页面只
   用于界面预览，不会在 Mac 播放电台。
 - **小伙伴：** 设备端动态小脸支持触摸、运动、接近和摄像头运动响应；浏览器只演示
   视觉效果，不会读取设备传感器。
-- **电源与状态：** 首页显示电池/USB 状态；短按电源键可息屏或唤醒，App 的后台任务
-  不会因此停止。
+- **电源与状态：** 首页、音乐与收音机均显示电池/USB 状态；短按电源键可息屏或唤醒，
+  App 的后台任务不会因此停止。
 
 ## 交互方式
 
@@ -164,7 +173,7 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 | 所有 App | `SYM + 0` / `ESC` 返回主菜单 | 点击页面中可见的返回/主菜单区域。 |
 | 连接中心 | `A` 自动、`H` 家庭、`W` 公司、`E` 编辑、`Q` / `ESC` 返回 | 选择已保存网络，或开启临时配网热点。 |
 | 音乐遥控器 | `J` 上一首、`空格` 播放/暂停、`K` 下一首、`H` 喜欢、`C` 单曲循环、`V` 列表循环；`S` 连接中心 | 点击对应控件。 |
-| 网络收音机 | `ESC` 返回主菜单 | 在设备上选择电台；点击 Wi-Fi 区域进入连接中心。声音由硬件本地播放。 |
+| 网络收音机 | `Q` / `ESC` 返回主菜单、`S` 连接中心、`空格` 播放/暂停、`J` / `K` 切台、`1`–`3` 直选、`+` / `-` 音量 | 选择电台，点击 `DEVICE AUDIO` 播放/暂停，或点击 Wi-Fi 区域进入连接中心；声音由硬件本地播放。 |
 | 小伙伴 | `Q` 或 `ESC` 返回主菜单 | 触摸小脸；支持的硬件会根据运动和接近状态作出反应。 |
 
 ## 构建与运行

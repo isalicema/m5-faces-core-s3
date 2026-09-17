@@ -108,8 +108,7 @@ void acceptBoot(bool healthy){
 void begin(){
     Serial.println(marker);
     faces_network::begin();configured=faces_network::hasWifi()&&faces_network::hasBridge();
-    Preferences p;
-    if(p.begin("faces-ota",true)){lastSha=p.getString("last_sha");p.end();}
+    Preferences p;if(p.begin("faces-ota",true)){lastSha=p.getString("last_sha");p.end();}
     lastCheck=millis()-25000; // First idle check after about five seconds.
 }
 bool tick(bool idle){

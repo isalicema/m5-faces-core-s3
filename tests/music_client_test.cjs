@@ -5,11 +5,11 @@ const response=(code,data)=>({status:code,ok:code>=200&&code<300,json:async()=>d
 const flush=()=>new Promise(r=>setImmediate(r));
 function setup(fetcher){
  const elements={},buttons=[{dataset:{action:'toggle'},disabled:false}];
- const calls=[];const ctx={console,AbortSignal:{timeout:()=>undefined},crypto:{randomUUID:()=> 'unique-request'},
+ const calls=[],timers=new Map();let timerId=0;const ctx={console,AbortSignal:{timeout:()=>undefined},crypto:{randomUUID:()=> 'unique-request'},
   fetch:async(path,opts)=>{calls.push([path,opts]);return fetcher(path,opts)},
-  setTimeout:()=>1,clearTimeout:()=>{},requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{},performance:{now:()=>0},Image:class {},URL:{createObjectURL:()=> 'blob:test',revokeObjectURL:()=>{}},
-  document:{getElementById:id=>elements[id]??=( {textContent:'',dataset:{},style:{},replaceChildren(){}} ),querySelectorAll:()=>buttons},window:{handlers:{},addEventListener(name,fn){(this.handlers[name]??=[]).push(fn)}}};
- vm.createContext(ctx);vm.runInContext(source,ctx);return{ctx,elements,buttons,calls};
+  setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId},clearTimeout:id=>timers.delete(id),requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{},performance:{now:()=>0},Image:class {},URL:{createObjectURL:()=> 'blob:test',revokeObjectURL:()=>{}},
+  document:{getElementById:id=>elements[id]??=( {textContent:'',dataset:{},style:{setProperty(k,v){this[k]=v}},replaceChildren(){}} ),querySelectorAll:()=>buttons},window:{handlers:{},addEventListener(name,fn){(this.handlers[name]??=[]).push(fn)}}};
+ vm.createContext(ctx);vm.runInContext(source,ctx);return{ctx,elements,buttons,calls,finishPress(){for(const [id,t] of timers){if(t.ms===160){timers.delete(id);t.fn();}}}};
 }
 (async()=>{
  const repeat=setup(async (path,opts)=>response(200,path==='/api/action'?{ok:true,pending:true}:{...good,actions:['repeat_one','repeat_all']}));
@@ -22,14 +22,54 @@ function setup(fetcher){
  }
  vm.runInContext("state={...state,repeat_requested:'one',stale:false};renderRepeat()",repeat.ctx);
  assert.equal(repeat.elements.repeatLabel.textContent,'已请求单曲循环');assert.equal(repeat.elements.repeatOne.dataset.requested,'true');
+ assert.equal(repeat.elements.repeatOne.dataset.unconfirmed,'true');assert.equal(repeat.elements.repeatOne.ariaPressed,'mixed');assert.match(repeat.elements.repeatOne.title,/未提供实时/);
  vm.runInContext("state={...state,stale:true};renderRepeat()",repeat.ctx);
  assert.equal(repeat.elements.repeatLabel.textContent,'循环模式未同步');assert.equal(repeat.elements.repeatOne.dataset.requested,'false');
+ assert.equal(repeat.elements.repeatOne.dataset.unconfirmed,'false');assert.equal(repeat.elements.repeatOne.ariaPressed,'false');
  vm.runInContext("state={...state,repeat_mode:'all',repeat_requested:'one',stale:false};renderRepeat()",repeat.ctx);
  assert.equal(repeat.elements.repeatLabel.textContent,'列表循环');assert.equal(repeat.elements.repeatAll.dataset.selected,'true');assert.equal(repeat.elements.repeatOne.dataset.selected,'false');
+ assert.equal(repeat.elements.repeatAll.dataset.unconfirmed,'false');assert.equal(repeat.elements.repeatAll.ariaPressed,'true');
  vm.runInContext("state={...state,repeat_mode:'off'};renderRepeat()",repeat.ctx);
  assert.equal(repeat.elements.repeatOne.dataset.selected,'false');assert.equal(repeat.elements.repeatAll.dataset.selected,'false');
  vm.runInContext("state={...state,repeat_mode:'one',stale:true};renderRepeat()",repeat.ctx);
  assert.equal(repeat.elements.repeatOne.dataset.selected,'false');
+ // Paper preview reads actual source names and theme colors; unknown repeat stays hidden.
+ const netease=setup(async()=>response(200,{...good,source_name:'网易云音乐',theme:{dominant:'#184632'},favorite:true,repeat_mode:'one'}));
+ const apple=setup(async()=>response(200,{...good,source_name:'Apple Music',theme:{dominant:'#edce72'},playing:false,repeat_mode:'all'}));
+ await flush();
+ assert.equal(netease.elements.source.textContent,'网易云音乐');
+ assert.equal(apple.elements.source.textContent,'Apple Music');
+ assert.equal(netease.elements.screen.style['--music-accent'],'#184632');
+ assert.equal(netease.elements.screen.style['--music-accent-ink'],'#ffffff');
+ assert.equal(apple.elements.screen.style['--music-accent-ink'],'#000000');
+ assert.equal(netease.elements.favoriteControl.dataset.liked,'true');
+ assert.match(apple.elements.play.innerHTML,/#paper-play/);
+ assert.match(netease.elements.play.innerHTML,/#paper-pause/);
+ assert.equal(netease.elements.repeatLabel.hidden,false);
+ vm.runInContext('state.stale=true;renderRepeat()',netease.ctx);
+ assert.equal(netease.elements.repeatLabel.hidden,true);
+ vm.runInContext("paperAccent({dominant:'invalid'})",apple.ctx);
+ assert.equal(apple.elements.screen.style['--music-accent'],'#d7c9b2');
+ // Radio preview routes all controls locally, never into Mac playback APIs.
+ const radio=setup(async()=>response(200,good));await flush();
+ vm.runInContext("showApp('radio')",radio.ctx);
+ const actionCount=()=>radio.calls.filter(c=>c[0]==='/api/action').length;
+ const beforeRadio=actionCount();
+ radio.elements.radioStation2.onclick();
+ assert.equal(radio.elements.radioView.dataset.station,'2');
+ assert.equal(radio.elements.radioNeedle.style.left,'293.5px');
+ assert.equal(radio.elements.radioStation2.ariaPressed,'true');
+ assert.equal(radio.elements.radioStatus.textContent,'LIVE');
+ radio.elements.radioPlay.onclick();assert.equal(radio.elements.radioStatus.textContent,'PAUSED');
+ function radioKey(key){radio.ctx.window.handlers.keydown.forEach(fn=>fn({key,target:{tagName:'BODY'},preventDefault(){}}));}
+ radioKey('K');assert.equal(radio.elements.radioView.dataset.station,'0');
+ radioKey('J');assert.equal(radio.elements.radioView.dataset.station,'2');
+ radioKey('2');assert.equal(radio.elements.radioView.dataset.station,'1');
+ for(let i=0;i<30;i++)radioKey('-');assert.equal(radio.elements.radioVolume.textContent,'VOL 0%');
+ for(let i=0;i<30;i++)radioKey('+');assert.equal(radio.elements.radioVolume.textContent,'VOL 100%');
+ radioKey('s');assert.equal(radio.elements.screen.dataset.app,'connection');
+ radioKey('q');assert.equal(radio.elements.screen.dataset.app,'home');
+ assert.equal(actionCount(),beforeRadio);
  let authorized=false;
  const a=setup(async path=>{if(path==='/session'){authorized=true;return response(200,{})}return response(authorized?200:401,good)});
  await flush();assert.equal(a.elements.title.textContent,'测试');assert.equal(a.calls.filter(c=>c[0]==='/session').length,1);
@@ -133,15 +173,26 @@ function setup(fetcher){
  assert.equal(g.elements.lyricText.textContent,'first');
  const h=setup(async()=>response(200,good));await flush();
  assert.equal(h.elements.screen.dataset.app,'home');const menuRequests=h.calls.length;
- h.elements.openMusic.onclick();assert.equal(h.elements.screen.dataset.app,'music');
+ h.elements.openMusic.onclick();assert.equal(h.elements.screen.dataset.app,'home');assert.equal(h.elements.openMusic.dataset.pressed,'true');h.elements.openRadio.onclick();h.finishPress();assert.equal(h.elements.screen.dataset.app,'music');assert.equal(h.elements.openMusic.dataset.pressed,'false');
  h.elements.homeButton.onclick();assert.equal(h.elements.screen.dataset.app,'home');
- h.elements.openRadio.onclick();assert.equal(h.elements.screen.dataset.app,'radio');
+ h.elements.openRadio.onclick();h.finishPress();assert.equal(h.elements.screen.dataset.app,'radio');
  h.elements.radioHome.onclick();assert.equal(h.elements.screen.dataset.app,'home');
  assert.equal(h.calls.length,menuRequests);
+ // All launcher routes keep the same escape path; navigation sends no player commands.
+ for(const [key,app] of [['m','music'],['r','radio'],['a','companion'],['s','connection']]){
+   const emit=k=>h.ctx.window.handlers.keydown.forEach(fn=>fn({key:k,repeat:false,target:{tagName:'BODY'},preventDefault(){}}));
+   emit(key);h.finishPress();assert.equal(h.elements.screen.dataset.app,app);
+   emit('q');assert.equal(h.elements.screen.dataset.app,'home');
+   emit(key);emit('Escape');h.finishPress();assert.equal(h.elements.screen.dataset.app,'home');
+ }
+ assert.equal(h.calls.length,menuRequests);
  let batteryReport={received_at:Date.now()/1000,power:{valid:true,battery_present:true,usb_present:true,charging:true,percent:72}};
- const powerView=setup(async path=>response(200,path==='/api/ota/status'?{device:batteryReport}:good));await flush();
+ const powerView=setup(async path=>response(200,path==='/api/power'?{device:batteryReport}:good));await flush();
+ assert.equal(powerView.elements.musicPowerPercent.textContent,'72%');
  assert.equal(powerView.elements.homePowerPercent.textContent,'72%');assert.equal(powerView.elements.homePower.title,'充电中');
  assert.equal(powerView.elements.homePower.dataset.state,'charging');assert.equal(powerView.elements.homePowerFill.style.width,'20px');
+ await vm.runInContext("showApp('music');powerPollAt=0;updatePower()",powerView.ctx);
+ assert.equal(powerView.elements.musicPower.dataset.state,'charging');
  batteryReport={...batteryReport,received_at:Date.now()/1000-180};
  await vm.runInContext('powerPollAt=0;updatePower()',powerView.ctx);
  assert.equal(powerView.elements.homePowerPercent.textContent,'--');assert.equal(powerView.elements.homePower.title,'电量待同步');
@@ -150,7 +201,7 @@ function setup(fetcher){
  assert.equal(powerView.elements.homePowerPercent.textContent,'--');assert.equal(powerView.elements.homePower.title,'未检测到电池');
  for(const [level,state] of [[31,'normal'],[30,'low'],[16,'low'],[15,'critical'],[0,'critical']]){
    batteryReport={received_at:Date.now()/1000,power:{valid:true,battery_present:true,usb_present:false,charging:false,percent:level}};
-   await vm.runInContext('powerPollAt=0;updatePower()',powerView.ctx);assert.equal(powerView.elements.homePower.dataset.state,state);
+   await vm.runInContext('powerPollAt=0;updatePower()',powerView.ctx);assert.equal(powerView.elements.homePower.dataset.state,state);assert.equal(powerView.elements.musicPower.dataset.state,state);
  }
  console.log('PASS: timed lyrics/pause/stale/seek; stage retry/crossfade/reset; ordered shrink/roll, rotation, mid-motion reversal, idle stop; confirmed pause, stale-state hold, visual-only demo; session restart, artwork retry, no action replay, reconnect recovery');
 })().catch(e=>{console.error(e);process.exitCode=1});

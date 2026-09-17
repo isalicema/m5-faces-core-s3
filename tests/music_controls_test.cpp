@@ -4,8 +4,8 @@
 #include <cstring>
 #include <iostream>
 int main(){using namespace music;
-assert(homeTouch(0,0)&&homeTouch(27,27)&&homeTouch(70,100)&&homeTouch(143,167));
-assert(!homeTouch(-1,0)&&!homeTouch(0,-1)&&!homeTouch(144,100)&&!homeTouch(70,168));
+assert(homeTouch(0,0)&&homeTouch(27,27)&&homeTouch(70,100)&&homeTouch(144,160));
+assert(!homeTouch(-1,0)&&!homeTouch(0,-1)&&!homeTouch(145,100)&&!homeTouch(70,161));
 assert(!homeTouch(155,95)&&!homeTouch(10,174)&&!homeTouch(10,210));
 assert(key(' ')==Toggle);assert(key('j')==Previous);assert(key('J')==Previous);
 assert(key('c')==RepeatOne);assert(key('C')==RepeatOne);
@@ -18,7 +18,7 @@ const Action expectedActions[]={Previous,Toggle,Next,Favorite,RepeatOne,RepeatAl
 const int xs[]={7,62,121,176,223,270}, widths[]={52,56,52,44,44,43};
 for(int y=0;y<240;++y)for(int x=0;x<320;++x){
     Action expected=None;
-    if(y>=200&&y<230)for(int i=0;i<6;++i)if(x>=xs[i]&&x<xs[i]+widths[i])expected=expectedActions[i];
+    if(y>=202&&y<232)for(int i=0;i<6;++i)if(x>=xs[i]&&x<xs[i]+widths[i])expected=expectedActions[i];
     assert(touch(x,y)==expected);
     if(expected!=None)assert(!homeTouch(x,y));
 }

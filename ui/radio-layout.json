@@ -1,0 +1,14 @@
+{
+  "width": 320, "height": 240,
+  "paper": "#f4e3c4", "ink": "#111111", "coral": "#ff655f",
+  "stations": [
+    {"name":"Groove Salad","short":"GROOVE","genre":"AMBIENT"},
+    {"name":"Drone Zone","short":"DRONE","genre":"ATMOSPHERIC"},
+    {"name":"Secret Agent","short":"AGENT","genre":"CINEMATIC"}
+  ],
+  "stationX": [8,111,214], "stationY":173, "stationWidth":98, "stationHeight":42,
+  "home": [0,0,144,39], "play": [8,113,144,33], "connection": [0,217,96,23],
+  "volumeDown": [164,217,34,23], "volumeUp": [282,217,38,23],
+  "needleX": [255,275,295], "needleY":109, "needleHeight":25,
+  "powerRight":312, "powerY":12
+}

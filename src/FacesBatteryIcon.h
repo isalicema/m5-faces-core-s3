@@ -3,14 +3,14 @@
 #include "FacesPowerModel.h"
 namespace faces_power {
 // Geometry and colours adapted from M5 StopWatch drawBatteryStatusAt.
-inline void drawBattery(M5Canvas& canvas,const State& state,int right,int y){
+inline int drawBattery(M5Canvas& canvas,const State& state,int right,int y,bool paper=false){
     char label[8]="--";
     if(state.valid&&state.present&&state.percent>=0)snprintf(label,sizeof(label),"%d%%",state.percent);
-    uint16_t color=canvas.color565(216,223,217);
+    uint16_t color=paper?canvas.color565(17,17,17):canvas.color565(216,223,217);
     switch(tint(state)){
-        case Tint::Charging:color=canvas.color565(58,222,126);break;
-        case Tint::Low:color=canvas.color565(255,190,75);break;
-        case Tint::Critical:color=canvas.color565(255,91,91);break;
+        case Tint::Charging:color=paper?canvas.color565(22,132,75):canvas.color565(58,222,126);break;
+        case Tint::Low:color=paper?canvas.color565(182,93,0):canvas.color565(255,190,75);break;
+        case Tint::Critical:color=paper?canvas.color565(197,47,50):canvas.color565(255,91,91);break;
         default:break;
     }
     int x=right-32-canvas.textWidth(label);
@@ -30,5 +30,6 @@ inline void drawBattery(M5Canvas& canvas,const State& state,int right,int y){
     }
     canvas.setTextColor(color);canvas.setTextDatum(lgfx::textdatum_t::middle_left);
     canvas.drawString(label,x+32,y+7);canvas.setTextDatum(lgfx::textdatum_t::top_left);
+    return x;
 }
 }

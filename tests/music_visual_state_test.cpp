@@ -2,6 +2,13 @@
 #include <cassert>
 #include <iostream>
 int main(){
+ music::SceneState scene;
+ scene.update("blue");assert(scene.needsImage());assert(scene.accept("blue"));
+ scene.update("");assert(!scene.needsImage());assert(scene.loaded=="blue");
+ scene.update("blue");assert(!scene.needsImage()); // Pause metadata recovered.
+ scene.update("red");assert(scene.needsImage());assert(scene.loaded=="blue");
+ scene.update("green");assert(!scene.accept("red"));assert(scene.loaded=="blue");
+ assert(scene.accept("green"));assert(!scene.needsImage()); // Atomic replacement.
  music::ArtworkState a;
  assert(a.update("song A","art A"));assert(a.needsImage());a.accept();
  // Pause/resume can temporarily remove metadata, but the current picture stays.

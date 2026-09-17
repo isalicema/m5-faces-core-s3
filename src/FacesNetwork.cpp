@@ -8,7 +8,8 @@
 #include <mbedtls/md.h>
 namespace faces_network {
 namespace {
-Settings cfg;WiFiUDP udp;bool udpReady=false,started=false,paused=false,attempting=false;
+Settings cfg;WiFiUDP udp;bool udpReady=false,started=false,attempting=false;
+connection_policy::RetryWait retry;
 int attempt=-1,connected=-1;uint32_t searchAt=0,attemptAt=0,discoverAt=0;
 String bridgeHost,bridgeToken,nonce;uint16_t bridgePort=8766;
 String str(cJSON* j,const char* k){auto v=cJSON_GetObjectItemCaseSensitive(j,k);return cJSON_IsString(v)?v->valuestring:"";}
@@ -43,21 +44,26 @@ bool save(const Settings& s){
  char* raw=cJSON_PrintUnformatted(j);cJSON_Delete(j);if(!raw)return false;String json(raw);cJSON_free(raw);
  Preferences p;if(!p.begin("faces-connect",false))return false;p.putString("config",json);bool ok=p.getString("config")==json;p.end();return ok;
 }
-void begin(bool powerSave){cfg=load();resetBridge();started=true;paused=false;attempting=false;attempt=-1;connected=-1;searchAt=millis();WiFi.mode(WIFI_STA);WiFi.setSleep(powerSave);WiFi.setAutoReconnect(false);tick();}
-bool choose(int selected){if(selected<-1||selected>1||(selected>=0&&cfg.profiles[selected].ssid.isEmpty()))return false;auto next=cfg;next.selected=selected;if(!save(next))return false;cfg=next;WiFi.disconnect(false,false);resetBridge();connected=-1;attempt=-1;paused=false;attempting=false;searchAt=millis();return true;}
+void begin(bool powerSave){cfg=load();resetBridge();started=true;retry.reset();attempting=false;attempt=-1;connected=-1;searchAt=millis();WiFi.mode(WIFI_STA);WiFi.setSleep(powerSave);WiFi.setAutoReconnect(false);tick();}
+bool choose(int selected){if(selected<-1||selected>1||(selected>=0&&cfg.profiles[selected].ssid.isEmpty()))return false;auto next=cfg;next.selected=selected;if(!save(next))return false;cfg=next;WiFi.disconnect(false,false);resetBridge();connected=-1;attempt=-1;retry.reset();attempting=false;searchAt=millis();return true;}
 bool hasWifi(){return !cfg.profiles[0].ssid.isEmpty()||!cfg.profiles[1].ssid.isEmpty();}
 bool hasBridge(){return !cfg.profiles[0].token.isEmpty()||!cfg.profiles[1].token.isEmpty();}
 void tick(){
  if(!started)return;uint32_t now=millis();
  if(WiFi.status()!=WL_CONNECTED){
-  if(connected>=0){connected=-1;resetBridge();attempting=false;paused=false;searchAt=now;}
-  if(paused||!hasWifi())return;
-  if(now-searchAt>=connection_policy::searchMs){paused=true;WiFi.disconnect(false,false);return;}
-  if(attempting){if(now-attemptAt<connection_policy::attemptMs)return;WiFi.disconnect(false,false);attempting=false;if(cfg.selected>=0){paused=true;return;}}
+  if(connected>=0){connected=-1;resetBridge();attempting=false;retry.reset();searchAt=now;}
+  if(!hasWifi())return;
+  if(retry.waiting()){
+   if(!retry.resume(now))return;
+   searchAt=now;attempt=-1;attempting=false;
+   Serial.println("NETWORK retrying saved Wi-Fi profiles");
+  }
+  if(now-searchAt>=connection_policy::searchMs){retry.start(now);attempting=false;WiFi.disconnect(false,false);return;}
+  if(attempting){if(now-attemptAt<connection_policy::attemptMs)return;WiFi.disconnect(false,false);attempting=false;if(cfg.selected>=0){retry.start(now);return;}}
   attempt=connection_policy::next(attempt,!cfg.profiles[0].ssid.isEmpty(),!cfg.profiles[1].ssid.isEmpty(),cfg.selected);
-  if(attempt<0){paused=true;return;}auto& f=cfg.profiles[attempt];WiFi.begin(f.ssid.c_str(),f.password.c_str());attempting=true;attemptAt=now;return;
+  if(attempt<0){retry.start(now);return;}auto& f=cfg.profiles[attempt];WiFi.begin(f.ssid.c_str(),f.password.c_str());attempting=true;attemptAt=now;return;
  }
- if(connected<0){connected=attempt>=0?attempt:0;attempting=false;paused=false;auto& f=cfg.profiles[connected];bridgeHost=f.host;bridgeToken=f.token;bridgePort=f.port;}
+ if(connected<0){connected=attempt>=0?attempt:0;attempting=false;retry.reset();auto& f=cfg.profiles[connected];bridgeHost=f.host;bridgeToken=f.token;bridgePort=f.port;}
  if(!hasBridge())return;
  if(!udpReady)udpReady=udp.begin(0)==1;
  if(!udpReady)return;
@@ -74,7 +80,7 @@ void tick(){
   udp.beginPacket(broadcast,42116);udp.write((const uint8_t*)q.c_str(),q.length());udp.endPacket();
  }
 }
-const Settings& settings(){return cfg;}bool failed(){return paused;}int activeProfile(){return connected;}
-String status(){if(WiFi.status()==WL_CONNECTED)return WiFi.SSID();if(!hasWifi())return "尚未保存网络";if(paused)return "未找到网络，请选择或修改";return "正在连接 Wi-Fi";}
+const Settings& settings(){return cfg;}bool failed(){return retry.waiting();}int activeProfile(){return connected;}
+String status(){if(WiFi.status()==WL_CONNECTED)return WiFi.SSID();if(!hasWifi())return "尚未保存网络";if(retry.waiting())return "连接未成功，稍后自动重试";return "正在连接 Wi-Fi";}
 String host(){return bridgeHost;}String token(){return bridgeToken;}uint16_t port(){return bridgePort;}
 }

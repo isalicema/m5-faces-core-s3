@@ -19,9 +19,10 @@ chars.update('〜～﹉﹊﹋﹌')
 chars=sorted(chars,key=ord)
 fontpath=folder/'NotoSansCJKsc-Regular.otf'
 manifest={'source':'https://github.com/notofonts/noto-cjk/blob/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf','source_sha256':hashlib.sha256(fontpath.read_bytes()).hexdigest(),'license':'OFL.txt','glyphs':len(chars),'fonts':[]}
-for size in (10,12,16):
- source=folder/('NotoSansCJKsc-Bold.otf' if size==16 else 'NotoSansCJKsc-Regular.otf')
+for size,regular in ((10,False),(12,False),(16,False),(16,True)):
+ source=folder/('NotoSansCJKsc-Bold.otf' if size==16 and not regular else 'NotoSansCJKsc-Regular.otf')
  glyphs=chars if size!=10 else sorted(set(chr(c) for c in range(32,127))|set('网易云音乐连接等待状态未知暂停播放设置'),key=ord)
+ if regular:glyphs=sorted(set(' ·S连接'),key=ord)
  font=ImageFont.truetype(str(source),size)
  records=[];bitmaps=[];ascent=0;descent=0
  for ch in glyphs:
@@ -36,8 +37,9 @@ for size in (10,12,16):
   records.append(struct.pack('>7i',ord(ch),h,w,advance,-y0,x0,0))
   bitmaps.append(mask.tobytes())
   ascent=max(ascent,-y0);descent=max(descent,h+y0)
+ if regular:ascent,descent=19,5 # Match the 16px title font baseline.
  data=struct.pack('>6i',len(glyphs),11,size,0,ascent,descent)+b''.join(records)+b''.join(bitmaps)
- out=folder/f'faces{size}.vlw';out.write_bytes(data)
+ out=folder/('faces16regular.vlw' if regular else f'faces{size}.vlw');out.write_bytes(data)
  manifest['fonts'].append({'file':out.name,'glyphs':len(glyphs),'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'size':size,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'ascent':ascent,'descent':descent})
  print(out.name,len(glyphs),len(data),'alpha levels',len(set(b''.join(bitmaps))))
 (folder/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

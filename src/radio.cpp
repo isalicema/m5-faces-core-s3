@@ -11,6 +11,7 @@
 #include <memory>
 #include <new>
 #include "DirectInput.h"
+#include "InputDiagnostics.h"
 #include "KeyboardIndicators.h"
 #include "FacesScreenPower.h"
 #include "RadioModel.h"
@@ -21,9 +22,20 @@
 #include "Launcher.h"
 #ifdef FACES_SUITE
 #include "FacesNetwork.h"
+#include "RadioLayout.h"
+#include "SmoothMusicFonts.h"
+#include "FacesPower.h"
+#include "FacesBatteryIcon.h"
+#include "MusicIcons.h"
 #endif
 #ifdef FACES_SUITE
 namespace radio_app {
+extern const uint8_t radio0Start[] asm("_binary_assets_radio_stage_0_png_start");
+extern const uint8_t radio0End[] asm("_binary_assets_radio_stage_0_png_end");
+extern const uint8_t radio1Start[] asm("_binary_assets_radio_stage_1_png_start");
+extern const uint8_t radio1End[] asm("_binary_assets_radio_stage_1_png_end");
+extern const uint8_t radio2Start[] asm("_binary_assets_radio_stage_2_png_start");
+extern const uint8_t radio2End[] asm("_binary_assets_radio_stage_2_png_end");
 #endif
 
 namespace {
@@ -33,6 +45,15 @@ KeyboardIndicators indicators;
 void syncIndicators(){indicators.sync(input,[](uint8_t mode){return keyboard.setLED(mode)==M5FACES_OK;});}
 RadioModel model;
 M5Canvas canvas(&M5.Display);
+#ifdef FACES_SUITE
+M5Canvas radioStage(&M5.Display);
+bool radioStageOK=false;
+int radioStageIndex=-1;
+faces_power::State radioPower;
+uint32_t lastPowerRead=0,needleAt=0;
+float needleFrom=255,needlePosition=255;
+int needleTarget=255;
+#endif
 #ifndef FACES_SUITE
 m5::LED_Strip_Class sideLights;
 MusicLight musicLight;
@@ -212,7 +233,72 @@ void button(int x, int width, const char* text) {
     canvas.fillRoundRect(x, 207, width, 26, 5, 0xE71C);
     label(x + 8, 216, text);
 }
+#ifdef FACES_SUITE
+void paperText(int x,int y,const String& value,uint16_t color=0x1082){
+    canvas.setFont(music_fonts::tiny());canvas.setTextSize(.9f);canvas.setTextColor(color);
+    canvas.setTextDatum(lgfx::textdatum_t::top_left);canvas.setCursor(x,y);canvas.print(value);
+}
+void drawPaper(){
+    const auto s=snapshot();const uint32_t now=millis();
+    const uint8_t* starts[]={radio0Start,radio1Start,radio2Start};
+    const uint8_t* ends[]={radio0End,radio1End,radio2End};
+    if(radioStageOK){
+        if(radioStageIndex!=model.selected){
+            radioStage.drawPng(starts[model.selected],ends[model.selected]-starts[model.selected],0,0);
+            radioStageIndex=model.selected;
+        }
+        radioStage.pushSprite(&canvas,0,0);
+    }else canvas.drawPng(starts[model.selected],ends[model.selected]-starts[model.selected],0,0);
+    if(!lastPowerRead||now-lastPowerRead>=5000){radioPower=faces_power::read();lastPowerRead=now;}
+    canvas.setFont(music_fonts::small());canvas.setTextSize(10.f/12);
+    const int statusRight=faces_power::drawBattery(canvas,radioPower,radio_layout::powerRight,radio_layout::powerY,true)-4;
+    const char* state="READY";
+    if(wanted.load()<0)state=model.nowPlaying?"PAUSED":"READY";
+    else if(!speakerOK.load())state="AUDIO ERR";
+    else if(WiFi.status()!=WL_CONNECTED)state="WI-FI";
+    else if(s.station!=model.selected)state="TUNING";
+    else if(s.state==Playback::Playing)state="LIVE";
+    else if(s.state==Playback::Retry)state="RETRYING";
+    else if(s.state==Playback::AudioError)state="AUDIO ERR";
+    else state="BUFFERING";
+    canvas.setFont(music_fonts::small());canvas.setTextSize(10.f/12);
+    const int statusWidth=canvas.textWidth(state)+10;
+    canvas.fillSmoothRoundRect(statusRight-statusWidth,10,statusWidth,18,9,canvas.color888(0xff,0x65,0x5f));
+    canvas.setTextColor(0x1082);canvas.setTextDatum(lgfx::textdatum_t::middle_center);
+    canvas.drawString(state,statusRight-statusWidth/2,19);
+    canvas.setTextDatum(lgfx::textdatum_t::top_left);
+    // Native font at 1x keeps the battery and small text free of scale clipping.
+    if(needleTarget!=radio_layout::needleX[model.selected]){
+        needleFrom=needlePosition;needleTarget=radio_layout::needleX[model.selected];needleAt=now;
+    }
+    float t=std::min(1.f,float(now-needleAt)/260.f);t=1-(1-t)*(1-t)*(1-t);
+    needlePosition=needleFrom+(needleTarget-needleFrom)*t;
+    canvas.fillSmoothRoundRect(needlePosition-1.5f,radio_layout::needleY,3,radio_layout::needleHeight,1.5f,canvas.color888(255,107,67));
+    // Reuse Music's antialiased Phosphor masks, avoiding jagged tiny triangles.
+    const uint8_t* icon=wanted.load()>=0?music_icons::pause:music_icons::play;
+    for(int iy=0;iy<13;++iy)for(int ix=0;ix<13;++ix){
+        int alpha=icon[iy*13+ix];if(!alpha)continue;
+        auto bg=canvas.readPixelRGB(18+ix,129+iy);
+        auto blend=[&](int c){return (c*(255-alpha)+17*alpha+127)/255;};
+        canvas.drawPixel(18+ix,129+iy,canvas.color888(blend(bg.R8()),blend(bg.G8()),blend(bg.B8())));
+    }
+    String title;
+    if(wanted.load()<0)title=model.nowPlaying?"Paused · SPACE to listen":"Choose a station to listen";
+    else if(s.station==model.selected&&s.title[0])title=s.title;
+    else if(!strcmp(state,"BUFFERING"))title="Buffering "+String(std::min<uint32_t>(100,s.buffered*100/prefillBytes))+"% · device audio";
+    else if(!strcmp(state,"WI-FI"))title="Connecting Wi-Fi · S settings";
+    else title="SomaFM · listener-supported radio";
+    canvas.setClipRect(10,147,300,14);paperText(10,148,title,canvas.color565(85,81,75));canvas.clearClipRect();
+    canvas.setFont(music_fonts::small());canvas.setTextSize(10.f/12);canvas.setTextColor(0x1082);canvas.setTextDatum(lgfx::textdatum_t::middle_center);
+    canvas.drawString("-",181,228);canvas.drawString("VOL "+String(model.volume*100/160)+"%",240,228);canvas.drawString("+",301,228);
+    canvas.setTextDatum(lgfx::textdatum_t::top_left);canvas.setTextSize(1);
+    canvas.pushSprite(0,0);dirty=false;
+}
+#endif
 void draw() {
+#ifdef FACES_SUITE
+    drawPaper();return;
+#endif
     const auto s = snapshot();
     canvas.fillSprite(paper);
     label(12, 10, "FACES / radio", 2);
@@ -323,9 +409,18 @@ void leaveHome(){
 #endif
 }
 void onKey(uint8_t key) {
+    input_diagnostics::key();
 #ifdef FACES_SUITE
     if(!suite::inputReady())return;
-    if(key==KEYBOARD3_KEY_ESC)leaveHome();
+    if(key==KEYBOARD3_KEY_ESC||key=='q'||key=='Q'){leaveHome();return;}
+    if(key=='s'||key=='S'){startPortal();return;}
+    if(key==' '||key==KEYBOARD3_KEY_ENTER||key=='\n'){model.nowPlaying=true;togglePlayback();}
+    else if(key=='j'||key=='J'||key=='k'||key=='K'||key=='r'||key=='R'){
+        model.tune(key=='j'||key=='J'?-1:1);model.nowPlaying=true;playSelected();
+    }else if(key>='1'&&key<='3'){model.selected=key-'1';model.nowPlaying=true;playSelected();}
+    else if(key=='+'||key=='=')changeVolume(8);
+    else if(key=='-')changeVolume(-8);
+    dirty=true;return;
 #endif
 #ifndef FACES_SUITE
     if (key == KEYBOARD3_KEY_ESC) {
@@ -378,11 +473,18 @@ void setup() {
     canvas.setColorDepth(16);
     if (!canvas.createSprite(320, 240)) { M5.Display.print("Display allocation failed"); while (true) delay(1000); }
     canvas.setTextWrap(false);
+#ifdef FACES_SUITE
+    music_fonts::begin();radioStage.setColorDepth(16);radioStage.setPsram(true);
+    radioStageOK=radioStage.createSprite(320,240)!=nullptr;
+#endif
     prefs.begin("faces-radio", false);
     lightMode = std::min<uint8_t>(2, prefs.getUChar("light", 1));
     model.volume = std::clamp(int(prefs.getUChar("volume", 48)), 0, 160);
     model.selected = std::clamp(int(prefs.getUChar("station", 0)), 0, radioStationCount - 1);
     model.cursor = model.selected;
+#ifdef FACES_SUITE
+    needlePosition=needleFrom=needleTarget=radio_layout::needleX[model.selected];
+#endif
     volume.store(model.volume); M5.Speaker.setVolume(model.volume);
     speakerOK.store(M5.Speaker.begin());
     if (!M5.In_I2C.isEnabled()) M5.In_I2C.begin(I2C_NUM_1, 12, 11);
@@ -401,10 +503,12 @@ void setup() {
 #endif
     if (xTaskCreatePinnedToCore(audioTask, "radio-audio", 8192, nullptr, 2, nullptr, 0) != pdPASS) speakerOK.store(false);
     Serial.printf("BOOT faces-radio 0.3 board=%d keyboard=%d speaker=%d lights=%d pin=5 heap=%u\n", int(M5.getBoard()), keyboardReady, speakerOK.load(), lightsReady, ESP.getFreeHeap());
+    Serial.println("UI radio-paper-v1");
     draw();
 }
 void loop() {
     M5.update();if(faces_screen::tick()){dirty=true;lastDraw=0;}
+    input_diagnostics::sample("radio",faces_screen::touchEnabled());
     uint32_t now = millis();
     #ifndef FACES_SUITE
     if (lightsReady && now - lastLight >= 40) {
@@ -451,6 +555,14 @@ void loop() {
 #ifdef FACES_SUITE
         if(!suite::inputReady())return;
 #endif
+#ifdef FACES_SUITE
+        if(radio_layout::home.contains(touch.x,touch.y)){leaveHome();return;}
+        else if(radio_layout::connection.contains(touch.x,touch.y)){startPortal();return;}
+        else if(radio_layout::play.contains(touch.x,touch.y)){model.nowPlaying=true;togglePlayback();}
+        else if(radio_layout::volumeDown.contains(touch.x,touch.y))changeVolume(-8);
+        else if(radio_layout::volumeUp.contains(touch.x,touch.y))changeVolume(8);
+        else if(int station=radio_layout::stationAt(touch.x,touch.y);station>=0){model.selected=station;model.nowPlaying=true;playSelected();}
+#else
         if (touch.y < 34 && touch.x >= 232) {
 #ifdef FACES_SUITE
             leaveHome();
@@ -481,6 +593,7 @@ void loop() {
         } else if (!settings && model.nowPlaying && touch.y >= 187 && touch.y < 207) {
             model.volume = std::clamp((int(touch.x) - 70) * 160 / 190, 0, 160); changeVolume(0);
         }
+#endif
         dirty = true;
     }
     if (saveAt && int32_t(now - saveAt) >= 0) {
@@ -502,6 +615,10 @@ void loop() {
             else overflow = true;
         }
     }
+#ifdef FACES_SUITE
+    // Animate only the short tuning transition; do not steal time from decoding.
+    if(needleTarget!=radio_layout::needleX[model.selected]||now-needleAt<260)dirty=true;
+#endif
     if (faces_screen::appVisible()&&((dirty && now - lastDraw > 40) || now - lastDraw > 1000)) { lastDraw = now; draw(); }
     faces_screen::render();
     delay(1);

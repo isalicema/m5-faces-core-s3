@@ -20,6 +20,17 @@ let state = {}, artId = '', artUrl = '', pending = false, noticeUntil = 0, updat
 const $ = id => document.getElementById(id);
 const fmt = x => Math.floor((x || 0)/60)+':'+String(Math.floor((x || 0)%60)).padStart(2,'0');
 function notice(text) { $('notice').textContent=text; noticeUntil=Date.now()+4000; }
+
+// Preview-only presentation. Source data and device rendering are unchanged.
+const paperIcon=name=>'<svg class="paper-icon" viewBox="0 0 256 256" aria-hidden="true"><use href="#paper-'+name+'"/></svg>';
+function paperAccent(theme) {
+    const color=/^#[0-9a-f]{6}$/i.test(theme?.dominant)?theme.dominant:'#d7c9b2';
+    const linear=color.slice(1).match(/../g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);
+    const l=linear[0]*.2126+linear[1]*.7152+linear[2]*.0722;
+    $('screen').style.setProperty('--music-accent',color);
+    $('screen').style.setProperty('--music-accent-ink',l>.179?'#000000':'#ffffff');
+}
+
 function renderRepeat() {
     const confirmed=!state.stale && ['off','one','all'].includes(state.repeat_mode);
     const mode=confirmed?state.repeat_mode:!state.stale && ['one','all'].includes(state.repeat_requested)?state.repeat_requested:'';
@@ -28,6 +39,14 @@ function renderRepeat() {
     $('repeatLabel').textContent=confirmed?(mode==='off'?'循环关闭':(mode==='one'?'单曲':'列表')+'循环'):mode?'已请求'+(mode==='one'?'单曲':'列表')+'循环':'循环模式未同步';
     $('repeatOne').dataset.requested=String(mode==='one');
     $('repeatAll').dataset.requested=String(mode==='all');
+    $('repeatLabel').hidden=!confirmed;
+    for(const [id,value,label,key] of [['repeatOne','one','单曲循环','C'],['repeatAll','all','列表循环','V']]) {
+        const button=$(id),requested=!confirmed&&mode===value;
+        button.dataset.unconfirmed=String(requested);
+        button.ariaPressed=confirmed?String(mode===value):requested?'mixed':'false';
+        button.title=label+' · '+key+(requested?'（设置指令已发送，播放器未提供实时模式回读）':confirmed&&mode===value?'（已确认）':'');
+    }
+
 }
 function controls() {
     document.querySelectorAll('[data-action]').forEach(b => {
@@ -49,11 +68,23 @@ window.addEventListener('pointercancel',()=>{if(homePointerHeld)homeIdleAt=perfo
 window.addEventListener('keydown',e=>{if(currentApp==='home'){homeKeysHeld.add(e.code||e.key);homeIdleAt=performance.now();}});
 window.addEventListener('keyup',e=>{if(homeKeysHeld.delete(e.code||e.key))homeIdleAt=performance.now();});
 window.addEventListener('blur',()=>{homeKeysHeld.clear();homePointerHeld=false;homeIdleAt=performance.now();});
+let homeLaunchTimer=0,homeLaunchTarget='';
+const homeCards={music:'openMusic',radio:'openRadio',companion:'openCompanion'};
+function pressHomeCard(app){
+    if(currentApp!=='home'||homeLaunchTarget)return;
+    homeLaunchTarget=app;
+    $(homeCards[app]).dataset.pressed='true';
+    // Let a quick tap paint the full press before navigating. No player command.
+    homeLaunchTimer=setTimeout(()=>showApp(app),160);
+}
 function showApp(app) {
+    clearTimeout(homeLaunchTimer);homeLaunchTimer=0;homeLaunchTarget='';
+    Object.values(homeCards).forEach(id=>{$(id).dataset.pressed='false'});
     currentApp=['music','radio','companion','connection'].includes(app)?app:'home';
     homeIdleAt=performance.now();homeKeysHeld.clear();homePointerHeld=false;
     $('screen').dataset.app=currentApp;
     $('companionNearDemo').hidden=currentApp!=='companion';
+    $('radioHint').hidden=currentApp!=='radio';
     ['musicKeys','musicHint','notice','motionDemo'].forEach(id=>{$(id).hidden=currentApp!=='music'});
     window.history?.replaceState(null,'',currentApp==='home'?'#home':'#'+currentApp);
 }
@@ -66,26 +97,48 @@ $('homeConnection').onclick=$('radioConnection').onclick=()=>showApp('connection
 $('connectionHome').onclick=()=>showApp('home');
 $('networkAuto').onclick=()=>networkPreview('auto');$('networkHome').onclick=()=>networkPreview('home');
 $('networkWork').onclick=()=>networkPreview('work');$('networkEdit').onclick=()=>networkPreview('edit');
-$('openCompanion').onclick=()=>showApp('companion');
+$('openCompanion').onclick=()=>pressHomeCard('companion');
 $('companionHome').onclick=()=>showApp('home');
-$('openMusic').onclick=()=>showApp('music');$('openRadio').onclick=()=>showApp('radio');
+$('openMusic').onclick=()=>pressHomeCard('music');$('openRadio').onclick=()=>pressHomeCard('radio');
 $('homeButton').onclick=$('radioHome').onclick=()=>showApp('home');
+// Radio interactions are local demonstrations only: never dispatch Mac actions.
+const radioStationsPreview=['Groove Salad','Drone Zone','Secret Agent'];
+let radioIndex=0,radioPlaying=false,radioStarted=false,radioVolume=48;
+function renderRadio(){
+    $('radioView').dataset.station=String(radioIndex);
+    $('radioStatus').textContent=radioPlaying?'LIVE':radioStarted?'PAUSED':'READY';
+    $('radioTrack').textContent=radioPlaying?'SomaFM · '+radioStationsPreview[radioIndex]: radioStarted?'Paused · SPACE to listen':'Choose a station to listen';
+    $('radioNeedle').style.left=(253.5+radioIndex*20)+'px';
+    $('radioPlay').innerHTML=paperIcon(radioPlaying?'pause':'play');
+    $('radioPlay').ariaLabel=(radioPlaying?'暂停':'播放')+'设备扬声器，空格';
+    $('radioVolume').textContent='VOL '+Math.floor(radioVolume*100/160)+'%';
+    for(let i=0;i<3;i++)$('radioStation'+i).ariaPressed=String(i===radioIndex);
+}
+function selectRadio(i){radioIndex=(i+3)%3;radioStarted=true;radioPlaying=true;renderRadio();}
+function toggleRadio(){radioStarted=true;radioPlaying=!radioPlaying;renderRadio();}
+function volumeRadio(delta){radioVolume=Math.max(0,Math.min(160,radioVolume+delta));renderRadio();}
+for(let i=0;i<3;i++)$('radioStation'+i).onclick=()=>selectRadio(i);
+$('radioPlay').onclick=toggleRadio;
+$('radioVolumeDown').onclick=()=>volumeRadio(-8);$('radioVolumeUp').onclick=()=>volumeRadio(8);
+renderRadio();
 let powerPollAt=0,powerPending=false;
 async function updatePower(){
-    if(currentApp!=='home'||powerPending||Date.now()-powerPollAt<10000)return;
+    if(!['home','music','radio'].includes(currentApp)||powerPending||Date.now()-powerPollAt<10000)return;
     powerPollAt=Date.now();powerPending=true;
     try{
-        const {device}=await (await read('/api/ota/status')).json();
+        const {device}=await (await read('/api/power')).json();
         const p=device?.power,age=Date.now()-(device?.received_at||0)*1000;
         const valid=p?.valid&&age>=0&&age<120000;
         const percent=valid&&p.battery_present&&Number.isInteger(p.percent)?p.percent:null;
         const charging=valid&&p.battery_present&&p.charging;
-        $('homePowerPercent').textContent=percent===null?'--':percent+'%';
-        $('homePowerFill').style.width=(charging?20:percent===null?0:20*Math.max(0,Math.min(100,percent))/100)+'px';
+        for(const prefix of ['homePower','musicPower','radioPower']){
+        $(prefix+'Percent').textContent=percent===null?'--':percent+'%';
+        $(prefix+'Fill').style.width=(charging?20:percent===null?0:20*Math.max(0,Math.min(100,percent))/100)+'px';
         const detail=!valid?'电量待同步':!p.battery_present?'未检测到电池':charging?'充电中':p.usb_present?'USB 供电':'电池供电';
-        $('homePower').title=detail;$('homePower').ariaLabel=$('homePowerPercent').textContent+' · '+detail;
-        $('homePower').dataset.state=charging?'charging':percent!==null&&percent<=15?'critical':percent!==null&&percent<=30?'low':'normal';
-    }catch(error){$('homePowerPercent').textContent='--';$('homePowerFill').style.width='0px';$('homePower').title='电量待同步';$('homePower').ariaLabel='电量待同步';$('homePower').dataset.state='normal';}
+        $(prefix).title=detail;$(prefix).ariaLabel=$(prefix+'Percent').textContent+' · '+detail;
+        $(prefix).dataset.state=charging?'charging':percent!==null&&percent<=15?'critical':percent!==null&&percent<=30?'low':'normal';
+        }
+    }catch(error){for(const prefix of ['homePower','musicPower','radioPower']){$(prefix+'Percent').textContent='--';$(prefix+'Fill').style.width='0px';$(prefix).title='电量待同步';$(prefix).ariaLabel='电量待同步';$(prefix).dataset.state='normal';}}
     finally{powerPending=false;}
 }
 showApp(window.location?.hash?.slice(1));
@@ -180,15 +233,21 @@ async function update() {
         state = await (await read('/api/state')).json();
         lyricStateAt=performance.now();renderLyric();
         recordMotion();
-        void updateStage(state.theme);
-        $('source').textContent = state.source_name || '音乐遥控器';
+        void updateStage(state.theme);paperAccent(state.theme);
+        $('source').textContent = /网易云/.test(state.source_name||'')?'网易云音乐':state.source_name || '音乐遥控器';
         $('status').textContent = state.connection === 'metadata_missing' ? '等待曲目信息' :
             state.stale ? '状态待更新' : !state.available ? '等待播放器' : state.playing ? 'PLAYING' : 'PAUSED';
         $('title').textContent = state.title;
         $('artist').textContent = state.artist;
         $('heart').dataset.liked = String(state.favorite === true);
-        $('heart').textContent = (state.favorite===true?'♥':'♡')+' 喜欢';
-        $('play').textContent = '空格'+(state.playing?'暂停':'播放');
+        $('heart').innerHTML = paperIcon(state.favorite===true?'heart':'heartOutline')+'<span>喜欢</span>';
+        $('favoriteControl').dataset.liked=String(state.favorite===true);
+        $('favoriteControl').innerHTML=paperIcon(state.favorite===true?'heart':'heartOutline')+'<span>H</span>';
+        $('play').innerHTML = paperIcon(state.playing?'pause':'play')+'<span>SPC</span>';
+        $('play').ariaLabel=state.playing?'暂停，快捷键 空格':'播放，快捷键 空格';
+        $('status').title=$('status').textContent;
+        $('source').title=$('source').textContent;
+        $('title').title=state.title||'';
         $('elapsed').textContent=fmt(state.position); $('duration').textContent=fmt(state.duration);
         $('progress').style.width=(state.duration?Math.min(100,state.position/state.duration*100):0)+'%';
         controls();renderRepeat();
@@ -235,10 +294,21 @@ document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>act(b.datase
 window.addEventListener('keydown',e=>{
     if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||['INPUT','TEXTAREA'].includes(e.target.tagName))return;
     if(e.key==='Escape'){e.preventDefault();showApp('home');return;}
-    if((currentApp==='home'||currentApp==='music')&&e.key.toLowerCase()==='s'){e.preventDefault();showApp('connection');return;}
+    if((currentApp==='home'||currentApp==='music'||currentApp==='radio')&&e.key.toLowerCase()==='s'){e.preventDefault();showApp('connection');return;}
     if(currentApp==='connection'){const k=e.key.toLowerCase();if(k==='q')showApp('home');const m={a:'auto',h:'home',w:'work',e:'edit'}[k];if(m)networkPreview(m);return;}
-    if(currentApp==='home'){if(e.key.toLowerCase()==='m')showApp('music');if(e.key.toLowerCase()==='r')showApp('radio');if(e.key.toLowerCase()==='a')showApp('companion');return;}
-    if(currentApp==='companion'&&e.key.toLowerCase()==='q'){e.preventDefault();showApp('home');return;}
+    if(currentApp==='home'){if(e.key.toLowerCase()==='m')pressHomeCard('music');if(e.key.toLowerCase()==='r')pressHomeCard('radio');if(e.key.toLowerCase()==='a')pressHomeCard('companion');return;}
+    if((currentApp==='companion'||currentApp==='radio')&&e.key.toLowerCase()==='q'){e.preventDefault();showApp('home');return;}
+    if(currentApp==='radio'){
+        const k=e.key.toLowerCase();
+        if([' ','enter','j','k','r','1','2','3','+','-','='].includes(k))e.preventDefault();
+        if(k===' '||k==='enter')toggleRadio();
+        else if(k==='j')selectRadio(radioIndex-1);
+        else if(k==='k'||k==='r')selectRadio(radioIndex+1);
+        else if(['1','2','3'].includes(k))selectRadio(Number(k)-1);
+        else if(k==='+'||k==='=')volumeRadio(8);
+        else if(k==='-')volumeRadio(-8);
+        return;
+    }
     if(currentApp!=='music')return;
     if(e.key.toLowerCase()==='q'){e.preventDefault();showApp('home');return;}
     const action={' ':'toggle',j:'previous',k:'next',h:'favorite',c:'repeat_one',v:'repeat_all'}[e.key.toLowerCase()];

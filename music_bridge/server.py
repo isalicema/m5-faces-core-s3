@@ -13,6 +13,7 @@ from .backend import MusicBackend, ROOT
 from .lyrics import LyricsService
 from .discovery import DiscoveryResponder
 from .ota import FirmwareCatalog
+from .power import PowerTelemetry
 
 
 def load_token(path):
@@ -31,6 +32,7 @@ def load_token(path):
 
 def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None):
     session = secrets.token_urlsafe(32)
+    power_telemetry = PowerTelemetry()
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args): pass  # Do not log tokens or listening history.
         def local(self): return self.client_address[0] in ("127.0.0.1", "::1")
@@ -61,6 +63,11 @@ def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None):
             if path == "/client.js" and self.local():
                 return self.send(200, (ROOT / "music_bridge/client.js").read_bytes(), "text/javascript; charset=utf-8")
             if not self.authenticated(): return self.send(401, {"ok": False, "error": "unauthorized"})
+            if path == "/api/power":
+                latest=power_telemetry.snapshot()
+                boot=ota_catalog.status() if ota_catalog else None
+                if boot and 'power' in boot and (not latest or boot['received_at']>latest['received_at']):latest=boot
+                return self.send(200,{"ok":True,"device":latest})
             if path == "/api/ota/status": return self.send(200,{"ok":True,"device":ota_catalog.status() if ota_catalog else None})
             if path == "/api/ota/manifest":
                 release=ota_catalog.current() if ota_catalog else None
@@ -79,7 +86,12 @@ def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None):
                     for offset in range(0,len(release.data),65536):self.wfile.write(release.data[offset:offset+65536])
                 except (BrokenPipeError,ConnectionResetError,TimeoutError):pass
                 return
-            if path == "/api/state": return self.send(200, backend.snapshot())
+            if path == "/api/state":
+                power_header=self.headers.get('X-Faces-Power','')
+                if power_header and len(power_header)<=512:
+                    try:power_telemetry.record(json.loads(power_header))
+                    except (ValueError,TypeError,AttributeError):pass
+                return self.send(200, backend.snapshot())
             if path == "/api/pair" and self.local():
                 return self.send(200, {"token": token, "port": self.server.server_port})
             if path.startswith("/api/artwork/"):
