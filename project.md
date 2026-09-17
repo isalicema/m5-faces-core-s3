@@ -7,7 +7,7 @@
 
 - **目标：** 维护可公开构建的 M5 Faces/CoreS3 固件与可选 Mac 音乐 Bridge，提供 Music Remote、Internet Radio、Companion 和 Connection Center。
 - **有效公开版本：** `85cb310`（Music README 缓存刷新已推送至 `main`）。
-- **当前工作：** 本轮 README 缓存刷新已完成；后续维护继续保留公开版动态 OTA 设备绑定、凭据隔离和纸面 Radio 设计。
+- **当前工作：** Alice 已确认 Music Remote 的暂停状态预览；正在按已确认范围提交和推送。
 - **公开边界：** 不纳入 `.local/`、`.pio/`、`backups/`、`evidence/`、`build/`、设备或网络标识、令牌、私有路径、日志、私有固件或恢复包。任何公开固件都必须由本树重新构建。
 - **验证状态：** 本轮尚未完成；构建、测试、提交、推送、烧录和实机观察分别记录，互不替代。
 
@@ -38,3 +38,7 @@ Alice 指出 README 的 Music Remote 配图仍是旧版。星子使用本公开�
 ### PUB-FACES-005 — 2026-09-18：Music README 缓存刷新
 
 Alice 反馈 GitHub README 页面仍渲染出旧的深色 Music Remote 图。星子比对公开远端 raw 图片与当前公开树的 SHA-256，二者一致，确认图片提交未遗漏，问题仅为同名资源的渲染缓存。为使 README 请求新资源，新增内容相同且已验证的 `assets/preview-music-paper.png`，并将 README 的 Music Remote 图片引用切换到该版本化路径。此项不改动固件或 Bridge 行为；变更已提交为 `85cb310` 并推送至 `origin/main`，远端 SHA 已核对一致。未执行构建、烧录或新的设备验收。
+
+### PUB-FACES-006 — 2026-09-18：Music README 暂停状态候选
+
+Alice 提议使用其当前暂停的歌曲重新制作 Music Remote README 配图。星子以只读本地媒体状态和本公开树的本地 Bridge 页面生成 `assets/preview-music-paused.png`：保留封面、同步歌词与暂停标记，并截取 340×260 的核心设备界面，不含桌面、浏览器或播放器外围内容。README 已在本地改为引用该版本化资源；Alice 已确认采用该图。未操作播放器、未构建或烧录；提交、推送与远端核对待后续记录。

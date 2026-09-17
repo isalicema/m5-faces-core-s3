@@ -10,7 +10,7 @@
 
 | Music Remote / 音乐遥控器 | Internet Radio / 网络收音机 | Companion / 小伙伴 |
 | --- | --- | --- |
-| <img src="assets/preview-music-paper.png" alt="Music Remote local preview with album art and lyric" width="300"> | <img src="assets/radio-stage-0-preview.png" alt="Internet Radio paper preview" width="300"> | <img src="assets/preview-companion.png" alt="Companion preview" width="300"> |
+| <img src="assets/preview-music-paused.png" alt="Music Remote preview from a paused local track" width="300"> | <img src="assets/radio-stage-0-preview.png" alt="Internet Radio paper preview" width="300"> | <img src="assets/preview-companion.png" alt="Companion preview" width="300"> |
 
 <a id="english"></a>
 
