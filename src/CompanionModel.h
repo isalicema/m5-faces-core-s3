@@ -21,6 +21,8 @@ class Model {
 public:
     Pose pose;
     void wake(uint32_t now){lastActive=now;}
+    uint32_t lastInteraction() const{return lastActive;}
+    void resetSensing(){psReady=false;near=false;tracked=false;tiltX=0;tiltY=0;if(emotion==Mood::Shy)emotionDuration=0;}
     void react(Mood mood,uint32_t now,uint32_t duration){wake(now);emotion=mood;emotionAt=now;emotionDuration=duration;}
     void pet(uint32_t now,float x=0,float y=0){touchAt=now;touched=true;lookX=clamp(x,-16,16);lookY=clamp(y,-16,16);react(Mood::Happy,now,2200);}
     void imu(uint32_t now,float ax,float ay,float az,float gx,float gy,float gz){

@@ -4,8 +4,10 @@
 #include <M5Faces.h>
 #include <esp_camera.h>
 #include <WiFi.h>
+#include <atomic>
 #include "Launcher.h"
 #include "CompanionModel.h"
+#include "CompanionRest.h"
 #include "DirectInput.h"
 #include "KeyboardIndicators.h"
 #include "SmoothMusicFonts.h"
@@ -22,10 +24,16 @@ KeyboardIndicators indicators;
 companion::Model model;
 bool keyboardOK=false,proximityOK=false,cameraOK=false;
 uint32_t lastKeys=0,lastSensors=0,lastFrame=0,lastHealth=0,hintAt=0,frames=0;
+bool resting=false,cameraNeedsRestart=false,proximityStandby=false,imuStandby=false;
+uint8_t proximityMode=0,imuPower=0;
+camera_config_t cameraConfig={};
+std::atomic<bool> cameraPause{false},cameraParked{false},cameraResetGrid{false};
 int proximity=-1,psLow=2047,psHigh=0;uint32_t psSamples=0,gazeEvents=0;
+uint32_t cameraSeen=0;
 float ax=0,ay=0,az=0,gx=0,gy=0,gz=0;
 portMUX_TYPE cameraLock=portMUX_INITIALIZER_UNLOCKED;
 struct CameraResult {float x=0,y=0;uint32_t at=0,frames=0;bool moving=false;int changed=0,cluster=0,brightness=0;uint32_t stackFree=0;} cameraResult;
+void draw(uint32_t now);
 
 void syncIndicators(){indicators.sync(input,[](uint8_t mode){return keyboard.setLED(mode)==M5FACES_OK;});}
 bool connectKeyboard(){
@@ -38,6 +46,13 @@ bool connectKeyboard(){
 void cameraWorker(void*){
     companion::MotionGrid grid;
     while(true){
+        if(cameraPause.load()){
+            cameraParked.store(true);
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+        cameraParked.store(false);
+        if(cameraResetGrid.exchange(false))grid.reset();
         auto* fb=esp_camera_fb_get();
         if(fb){
             float x=0,y=0;
@@ -64,7 +79,8 @@ bool beginCamera(){
     // Reuse M5's existing IDF I2C bus. Creating a second bus or releasing Wire1
     // would invalidate the shared touch/keyboard/IMU controller on Arduino 3.
     // Only setup accesses SCCB; the acquisition worker uses DVP exclusively.
-    esp_err_t err=esp_camera_init(&cfg);
+    cameraConfig=cfg;
+    esp_err_t err=esp_camera_init(&cameraConfig);
     Serial.printf("COMPANION camera_init=0x%x\n",unsigned(err));
     if(err!=ESP_OK)return false;
     if(xTaskCreatePinnedToCore(cameraWorker,"companion-camera",8192,nullptr,1,nullptr,0)!=pdPASS){esp_camera_deinit();return false;}
@@ -79,6 +95,58 @@ bool beginProximity(){
         &&M5.In_I2C.writeRegister8(0x23,0x83,4,100000)
         &&M5.In_I2C.writeRegister8(0x23,0x84,3,100000)
         &&M5.In_I2C.writeRegister8(0x23,0x81,0x22,100000);
+}
+void restSensors(uint32_t now){
+    resting=true;
+    draw(now); // Leave the last sleepy face and paused-camera glyph on the LCD.
+    cameraPause.store(true);
+    uint8_t mode=0,power=0;
+    if(proximityOK&&M5.In_I2C.readRegister(0x23,0x81,&mode,1,100000)){
+        proximityMode=mode;
+        proximityStandby=M5.In_I2C.writeRegister8(0x23,0x81,mode&~uint8_t(3),100000);
+    }
+    if(M5.Imu.getType()==m5::imu_bmi270&&M5.In_I2C.readRegister(0x69,0x7D,&power,1,100000)){
+        imuPower=power;
+        imuStandby=M5.In_I2C.writeRegister8(0x69,0x7D,0,100000);
+    }
+    Serial.printf("COMPANION rest after %lu ms proximity_standby=%d imu_standby=%d camera_parking=%d\n",
+        (unsigned long)(now-model.lastInteraction()),proximityStandby,imuStandby,cameraOK);
+}
+void finishCameraRest(){
+    if(!cameraOK||cameraNeedsRestart||!cameraParked.load())return;
+    static uint32_t lastAttempt=0;
+    uint32_t now=millis();
+    if(lastAttempt&&now-lastAttempt<1000)return;
+    lastAttempt=now;
+    esp_err_t err=esp_camera_deinit();
+    if(err==ESP_OK){cameraOK=false;cameraNeedsRestart=true;Serial.println("COMPANION camera stopped");}
+    else Serial.printf("COMPANION camera stop failed=0x%x; captures remain paused\n",unsigned(err));
+}
+void wakeSensors(uint32_t now){
+    resting=false;
+    if(imuStandby){
+        if(!M5.In_I2C.writeRegister8(0x69,0x7D,imuPower,100000))Serial.println("COMPANION IMU restore failed");
+        imuStandby=false;
+    }
+    if(proximityStandby){
+        if(!M5.In_I2C.writeRegister8(0x23,0x81,proximityMode,100000))Serial.println("COMPANION proximity restore failed");
+        proximityStandby=false;
+    }
+    if(cameraNeedsRestart){
+        esp_err_t err=esp_camera_init(&cameraConfig);
+        cameraOK=err==ESP_OK;
+        cameraNeedsRestart=!cameraOK;
+        Serial.printf("COMPANION camera restart=0x%x\n",unsigned(err));
+    }
+    if(cameraOK){
+        portENTER_CRITICAL(&cameraLock);cameraResult={};portEXIT_CRITICAL(&cameraLock);
+        cameraSeen=0;
+        cameraResetGrid.store(true);
+        cameraPause.store(false);
+    }
+    model.resetSensing();model.wake(now);hintAt=now;lastSensors=now;lastFrame=0;
+    draw(now);
+    Serial.println("COMPANION awake from rest");
 }
 void draw(uint32_t now){
     if(!faces_screen::appVisible())return;
@@ -109,6 +177,13 @@ void draw(uint32_t now){
     if(p.mood==companion::Mood::Happy||p.mood==companion::Mood::Shy){
         for(int side:{-1,1})for(int i=0;i<3;i++)canvas.drawWideLine(cx+side*84+i*5,cy+24,cx+side*84+i*5-2,cy+30,.8f,uint16_t(p.mood==companion::Mood::Shy?0xF2AA:0xEBCF));
     }
+    if(resting){
+        // A fixed sleep cue is drawn only on the one frame kept during sensor standby.
+        canvas.setFont(music_fonts::small());canvas.setTextColor(0xBDF7);
+        canvas.setCursor(205,75);canvas.print("z");
+        canvas.setCursor(220,61);canvas.print("z");
+        canvas.setCursor(235,47);canvas.print("z");
+    }
     // The wide hit target remains available even when the quiet label fades.
     uint16_t label=now-hintAt<6000?0x8410:0x2104;
     canvas.drawWideLine(19,13,14,18,.8f,label);canvas.drawWideLine(14,18,19,23,.8f,label);
@@ -117,16 +192,17 @@ void draw(uint32_t now){
         canvas.setCursor(95,215);canvas.print("摸摸我 · Q 返回");
     }
     // Camera-shaped status glyph: lit while observing, outline when disabled.
-    canvas.drawRoundRect(291,12,12,9,2,cameraOK?0x7D55:0x4208);
-    canvas.fillCircle(297,16,2,cameraOK?0x7D55:0x4208);
+    bool cameraActive=cameraOK&&!resting;
+    canvas.drawRoundRect(291,12,12,9,2,cameraActive?0x7D55:0x4208);
+    canvas.fillCircle(297,16,2,cameraActive?0x7D55:0x4208);
     static bool painted=false,previousHint=false,previousCamera=false;
     bool showHint=now-hintAt<6000;
     // Only the face moves. Keep header/footer on the LCD until their state changes.
     bool powerRedraw=faces_screen::takeRedraw();
-    bool full=powerRedraw||!painted||showHint!=previousHint||cameraOK!=previousCamera;
+    bool full=powerRedraw||!painted||showHint!=previousHint||cameraActive!=previousCamera;
     if(!full)M5.Display.setClipRect(32,52,264,150);
     canvas.pushSprite(0,0);M5.Display.clearClipRect();
-    painted=true;previousHint=showHint;previousCamera=cameraOK;frames++;
+    painted=true;previousHint=showHint;previousCamera=cameraActive;frames++;
 }
 void key(uint8_t c,uint32_t now){
     if(!suite::inputReady())return;
@@ -148,20 +224,32 @@ void setup(){
     faces_ota::acceptBoot(allocated&&fonts);hintAt=millis();
 }
 void loop(){
-    M5.update();if(faces_screen::tick())lastFrame=0;uint32_t now=millis();
+    M5.update();bool screenChanged=faces_screen::tick();uint32_t now=millis();
+    if(screenChanged){lastFrame=0;if(resting&&faces_screen::appVisible())wakeSensors(now);}
     static String command;
     while(Serial.available()){
         char c=Serial.read();if(c=='\n'){if(command=="COMPANION HOME")suite::open(suite::App::Home);command="";}
         else if(c!='\r'){if(command.length()<40)command+=c;else command="INVALID";}
     }
     if(keyboardOK&&now-lastKeys>=5){
-        lastKeys=now;uint8_t raw[10]={};if(keyboard.readReg(M5FACES_REG_KEY,raw,sizeof(raw))==M5FACES_OK)input.feed(raw,now);
+        lastKeys=now;uint8_t raw[10]={};
+        bool fresh=keyboard.readReg(M5FACES_REG_KEY,raw,sizeof(raw))==M5FACES_OK&&input.feed(raw,now);
+        if(fresh&&input.anyPressed()){
+            if(resting)wakeSensors(now);
+            else model.wake(now);
+        }
         input.tick(now,[now](uint8_t index,uint8_t layer){key(M5Faces_Keyboard3::KEYMAP[index][layer],now);});syncIndicators();
     }
     auto touch=M5.Touch.getDetail();
     if(faces_screen::touchEnabled()&&suite::inputReady()&&touch.wasPressed()){
         if(touch.x<112&&touch.y<55)suite::open(suite::App::Home);
+        if(resting)wakeSensors(now);
         model.pet(now,(touch.x-160)/10.f,(touch.y-120)/8.f);hintAt=now;
+    }
+    if(resting){
+        finishCameraRest();
+        faces_screen::render();delay(40);
+        return;
     }
     if(now-lastSensors>=40){
         lastSensors=now;
@@ -178,8 +266,12 @@ void loop(){
             model.proximity(now,proximity);
         }
         CameraResult result;portENTER_CRITICAL(&cameraLock);result=cameraResult;portEXIT_CRITICAL(&cameraLock);
-        static uint32_t seen=0;
-        if(result.frames!=seen){seen=result.frames;if(result.moving&&uint32_t(millis()-result.at)<1000&&std::abs(gx)+std::abs(gy)+std::abs(gz)<35){model.motion(now,-result.x,result.y);gazeEvents++;}}
+        if(result.frames!=cameraSeen){cameraSeen=result.frames;if(result.moving&&uint32_t(millis()-result.at)<1000&&std::abs(gx)+std::abs(gy)+std::abs(gz)<35){model.motion(now,-result.x,result.y);gazeEvents++;}}
+    }
+    if(companion::restDue(now,model.lastInteraction(),input.anyPressed()||M5.Touch.getCount()>0)){
+        restSensors(now);
+        faces_screen::render();delay(40);
+        return;
     }
     if(now-lastFrame>=33){lastFrame=now;draw(now);}
     if(now-lastHealth>=5000){

@@ -50,8 +50,11 @@ player, and a small on-device companion into one project.
 - **Internet Radio:** the device connects to Wi-Fi and plays the built-in radio
   stations through its own speaker. The browser page is a visual preview only.
 - **Companion:** an on-device animated face with touch, motion, proximity, and
-  camera-motion responses. The browser preview demonstrates the visual behavior
-  without using device sensors.
+  camera-motion responses. After three inactive minutes in Companion, it keeps
+  a sleepy face with three rising `z` marks, pauses camera/proximity/IMU work,
+  and wakes from touch or any Keyboard3 key. Sensor movement cannot wake this
+  quiet standby mode. The browser preview demonstrates visual behavior without
+  using device sensors.
 - **Power and status:** Home, Music and Radio retain battery/USB status. A short
   press of the power key dims or wakes the display without stopping app tasks.
 
@@ -64,7 +67,7 @@ player, and a small on-device companion into one project.
 | Connection Center | `A` automatic, `H` home, `W` work, `E` edit, `Q` / `ESC` home | Pick a saved network or open the temporary setup hotspot. |
 | Music | `J` previous, `Space` play/pause, `K` next, `H` favourite, `C` repeat one, `V` repeat all; `S` Connection Center | Tap the corresponding controls. |
 | Radio | `Q` / `ESC` home, `S` Connection Center, `Space` play/pause, `J` / `K` tune, `1`–`3` select a station, `+` / `-` volume | Select a station, use `DEVICE AUDIO` to play/pause, or use the Wi-Fi target. Playback is local to the hardware. |
-| Companion | `Q` or `ESC` returns home | Touch the face; movement and proximity affect its reactions on supported hardware. |
+| Companion | Any Keyboard3 key wakes quiet standby; `Q` or `ESC` returns home | Touch the face; after three idle minutes, touch or any key restores sensor responses. Motion and proximity do not wake quiet standby. |
 
 ## Build and run
 
@@ -160,8 +163,10 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
   避免闪成空白；它控制 Mac 播放，不在设备端串流或解码音频。
 - **网络收音机：** 设备自行连接 Wi-Fi，并通过自身扬声器播放内置电台；浏览器页面只
   用于界面预览，不会在 Mac 播放电台。
-- **小伙伴：** 设备端动态小脸支持触摸、运动、接近和摄像头运动响应；浏览器只演示
-  视觉效果，不会读取设备传感器。
+- **小伙伴：** 设备端动态小脸支持触摸、运动、接近和摄像头运动响应；在小伙伴内连续
+  三分钟无互动后，会保留睡眼与三个向右上方排列的 `z`，暂停摄像头、接近与 IMU
+  工作。触屏或任意 Keyboard3 键会唤醒并恢复传感器；静止期间挥手或摇动不会唤醒。
+  浏览器只演示视觉效果，不会读取设备传感器。
 - **电源与状态：** 首页、音乐与收音机均显示电池/USB 状态；短按电源键可息屏或唤醒，
   App 的后台任务不会因此停止。
 
@@ -174,7 +179,7 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 | 连接中心 | `A` 自动、`H` 家庭、`W` 公司、`E` 编辑、`Q` / `ESC` 返回 | 选择已保存网络，或开启临时配网热点。 |
 | 音乐遥控器 | `J` 上一首、`空格` 播放/暂停、`K` 下一首、`H` 喜欢、`C` 单曲循环、`V` 列表循环；`S` 连接中心 | 点击对应控件。 |
 | 网络收音机 | `Q` / `ESC` 返回主菜单、`S` 连接中心、`空格` 播放/暂停、`J` / `K` 切台、`1`–`3` 直选、`+` / `-` 音量 | 选择电台，点击 `DEVICE AUDIO` 播放/暂停，或点击 Wi-Fi 区域进入连接中心；声音由硬件本地播放。 |
-| 小伙伴 | `Q` 或 `ESC` 返回主菜单 | 触摸小脸；支持的硬件会根据运动和接近状态作出反应。 |
+| 小伙伴 | 任意 Keyboard3 键唤醒静止待机；`Q` 或 `ESC` 返回主菜单 | 触摸小脸；三分钟无互动后，触屏或任意键恢复传感器响应，挥手或接近不会唤醒静止待机。 |
 
 ## 构建与运行
 

@@ -1,10 +1,18 @@
 #include <cassert>
 #include <vector>
 #include "CompanionModel.h"
+#include "CompanionRest.h"
 int main(){
  using namespace companion;
+ assert(!restDue(179999,0,false));
+ assert(restDue(180000,0,false));
+ assert(!restDue(180000,0,true));
+ assert(!restDue(20,0xfffffff0,false));
+ assert(restDue(uint32_t(0xfffffff0u+180000u),0xfffffff0u,false));
  Model m;m.step(100);assert(m.step(46000).mood==Mood::Sleepy);
+ assert(m.lastInteraction()==100);
  m.pet(46010);assert(m.step(46010).mood==Mood::Happy);assert(m.step(48500).mood==Mood::Neutral);
+ assert(m.lastInteraction()==46010);
  m.imu(50000,2,0,0,0,0,0);assert(m.step(50000).mood==Mood::Dizzy);
  m.imu(52000,2,0,0,0,0,0);assert(m.step(52700).mood==Mood::Neutral);
  m.proximity(53000,5);m.proximity(53100,180);assert(m.step(53100).mood==Mood::Shy);
@@ -17,6 +25,8 @@ int main(){
  assert(std::abs(tracking.pose.x)<6);
  Model close;close.step(100);close.proximity(100,0);close.proximity(200,25);
  assert(close.step(200).mood==Mood::Shy);close.proximity(300,10);
+ close.resetSensing();assert(close.step(301).mood!=Mood::Shy);
+ close.proximity(302,0);close.proximity(303,25);assert(close.step(303).mood==Mood::Shy);
  assert(close.step(2200).mood==Mood::Shy);close.motion(2210,.5f,.1f);assert(close.step(2210).mood==Mood::Shy);close.proximity(2300,3);
  assert(close.step(3400).mood==Mood::Neutral);
  Model wrap;wrap.step(0xffffff00);wrap.pet(0xfffffff0);assert(wrap.step(20).mood==Mood::Happy);
