@@ -3,6 +3,7 @@ backups/
 evidence/
 build/
 .local/
+project.md
 __pycache__/
 .DS_Store
 *.py[cod]
