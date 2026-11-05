@@ -8,13 +8,24 @@
 
 ## UI previews / 界面预览
 
-| Music Remote / 音乐遥控器 | Internet Radio / 网络收音机 | Companion / 小伙伴 |
-| --- | --- | --- |
-| <img src="assets/preview-music-paused.png" alt="Music Remote preview from a paused local track" width="300"> | <img src="assets/radio-stage-0-preview.png" alt="Internet Radio paper preview" width="300"> | <img src="assets/preview-companion.png" alt="Companion preview" width="300"> |
-
-| Collection Shelf / 收藏唱片架 |
-| --- |
-| <img src="assets/preview-collection.png" alt="Collection shelf preview" width="340"> |
+<table>
+  <tr>
+    <th>Music Remote / 音乐遥控器</th>
+    <th>Internet Radio / 网络收音机</th>
+  </tr>
+  <tr>
+    <td><img src="assets/preview-music-paused.png" alt="Music Remote preview from a paused local track" width="340"></td>
+    <td><img src="assets/radio-stage-0-preview.png" alt="Internet Radio paper preview" width="340"></td>
+  </tr>
+  <tr>
+    <th>Companion / 小伙伴</th>
+    <th>Collection Shelf / 收藏唱片架</th>
+  </tr>
+  <tr>
+    <td><img src="assets/preview-companion.png" alt="Companion preview" width="340"></td>
+    <td><img src="assets/preview-collection.png" alt="Collection shelf preview" width="340"></td>
+  </tr>
+</table>
 
 <a id="english"></a>
 
