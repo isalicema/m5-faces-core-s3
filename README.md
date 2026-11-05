@@ -12,6 +12,10 @@
 | --- | --- | --- |
 | <img src="assets/preview-music-paused.png" alt="Music Remote preview from a paused local track" width="300"> | <img src="assets/radio-stage-0-preview.png" alt="Internet Radio paper preview" width="300"> | <img src="assets/preview-companion.png" alt="Companion preview" width="300"> |
 
+| Collection Shelf / 收藏唱片架 |
+| --- |
+| <img src="assets/preview-collection.png" alt="Collection shelf preview" width="340"> |
+
 <a id="english"></a>
 
 # M5 Faces CoreS3 Suite
