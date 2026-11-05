@@ -69,18 +69,19 @@ window.addEventListener('keydown',e=>{if(currentApp==='home'){homeKeysHeld.add(e
 window.addEventListener('keyup',e=>{if(homeKeysHeld.delete(e.code||e.key))homeIdleAt=performance.now();});
 window.addEventListener('blur',()=>{homeKeysHeld.clear();homePointerHeld=false;homeIdleAt=performance.now();});
 let homeLaunchTimer=0,homeLaunchTarget='';
-const homeCards={music:'openMusic',radio:'openRadio',companion:'openCompanion'};
+const homeCards={music:'openMusic',shelf:'openShelfHome',radio:'openRadio',companion:'openCompanion'};
 function pressHomeCard(app){
     if(currentApp!=='home'||homeLaunchTarget)return;
     homeLaunchTarget=app;
     $(homeCards[app]).dataset.pressed='true';
     // Let a quick tap paint the full press before navigating. No player command.
-    homeLaunchTimer=setTimeout(()=>showApp(app),160);
+    homeLaunchTimer=setTimeout(()=>app==='shelf'?openShelf():showApp(app),160);
 }
 function showApp(app) {
     clearTimeout(homeLaunchTimer);homeLaunchTimer=0;homeLaunchTarget='';
-    Object.values(homeCards).forEach(id=>{$(id).dataset.pressed='false'});
-    currentApp=['music','radio','companion','connection'].includes(app)?app:'home';
+    [...new Set(Object.values(homeCards))].forEach(id=>{$(id).dataset.pressed='false'});
+    if(currentApp==='shelf' && app!=='shelf')stopShelf();
+    currentApp=['music','shelf','radio','companion','connection'].includes(app)?app:'home';
     homeIdleAt=performance.now();homeKeysHeld.clear();homePointerHeld=false;
     $('screen').dataset.app=currentApp;
     $('companionNearDemo').hidden=currentApp!=='companion';
@@ -99,7 +100,8 @@ $('networkAuto').onclick=()=>networkPreview('auto');$('networkHome').onclick=()=
 $('networkWork').onclick=()=>networkPreview('work');$('networkEdit').onclick=()=>networkPreview('edit');
 $('openCompanion').onclick=()=>pressHomeCard('companion');
 $('companionHome').onclick=()=>showApp('home');
-$('openMusic').onclick=()=>pressHomeCard('music');$('openRadio').onclick=()=>pressHomeCard('radio');
+$('openMusic').onclick=()=>pressHomeCard('music');$('openShelfHome').onclick=()=>pressHomeCard('shelf');
+$('openRadio').onclick=()=>pressHomeCard('radio');
 $('homeButton').onclick=$('radioHome').onclick=()=>showApp('home');
 // Radio interactions are local demonstrations only: never dispatch Mac actions.
 const radioStationsPreview=['Groove Salad','Drone Zone','Secret Agent'];
@@ -123,7 +125,7 @@ $('radioVolumeDown').onclick=()=>volumeRadio(-8);$('radioVolumeUp').onclick=()=>
 renderRadio();
 let powerPollAt=0,powerPending=false;
 async function updatePower(){
-    if(!['home','music','radio'].includes(currentApp)||powerPending||Date.now()-powerPollAt<10000)return;
+    if(!['home','music','radio','shelf'].includes(currentApp)||powerPending||Date.now()-powerPollAt<10000)return;
     powerPollAt=Date.now();powerPending=true;
     try{
         const {device}=await (await read('/api/power')).json();
@@ -131,14 +133,14 @@ async function updatePower(){
         const valid=p?.valid&&age>=0&&age<120000;
         const percent=valid&&p.battery_present&&Number.isInteger(p.percent)?p.percent:null;
         const charging=valid&&p.battery_present&&p.charging;
-        for(const prefix of ['homePower','musicPower','radioPower']){
+        for(const prefix of ['homePower','musicPower','radioPower','shelfPower']){
         $(prefix+'Percent').textContent=percent===null?'--':percent+'%';
         $(prefix+'Fill').style.width=(charging?20:percent===null?0:20*Math.max(0,Math.min(100,percent))/100)+'px';
         const detail=!valid?'电量待同步':!p.battery_present?'未检测到电池':charging?'充电中':p.usb_present?'USB 供电':'电池供电';
         $(prefix).title=detail;$(prefix).ariaLabel=$(prefix+'Percent').textContent+' · '+detail;
         $(prefix).dataset.state=charging?'charging':percent!==null&&percent<=15?'critical':percent!==null&&percent<=30?'low':'normal';
         }
-    }catch(error){for(const prefix of ['homePower','musicPower','radioPower']){$(prefix+'Percent').textContent='--';$(prefix+'Fill').style.width='0px';$(prefix).title='电量待同步';$(prefix).ariaLabel='电量待同步';$(prefix).dataset.state='normal';}}
+    }catch(error){for(const prefix of ['homePower','musicPower','radioPower','shelfPower']){$(prefix+'Percent').textContent='--';$(prefix+'Fill').style.width='0px';$(prefix).title='电量待同步';$(prefix).ariaLabel='电量待同步';$(prefix).dataset.state='normal';}}
     finally{powerPending=false;}
 }
 showApp(window.location?.hash?.slice(1));
@@ -293,10 +295,15 @@ async function act(action) {
 document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>act(b.dataset.action));
 window.addEventListener('keydown',e=>{
     if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||['INPUT','TEXTAREA'].includes(e.target.tagName))return;
+    if(currentApp==='shelf'){handleShelfKey(e);return;}
     if(e.key==='Escape'){e.preventDefault();showApp('home');return;}
     if((currentApp==='home'||currentApp==='music'||currentApp==='radio')&&e.key.toLowerCase()==='s'){e.preventDefault();showApp('connection');return;}
     if(currentApp==='connection'){const k=e.key.toLowerCase();if(k==='q')showApp('home');const m={a:'auto',h:'home',w:'work',e:'edit'}[k];if(m)networkPreview(m);return;}
-    if(currentApp==='home'){if(e.key.toLowerCase()==='m')pressHomeCard('music');if(e.key.toLowerCase()==='r')pressHomeCard('radio');if(e.key.toLowerCase()==='a')pressHomeCard('companion');return;}
+    if(currentApp==='home'){
+        const app={m:'music',p:'shelf',r:'radio',a:'companion'}[e.key.toLowerCase()];
+        if(app){e.preventDefault();pressHomeCard(app);}
+        return;
+    }
     if((currentApp==='companion'||currentApp==='radio')&&e.key.toLowerCase()==='q'){e.preventDefault();showApp('home');return;}
     if(currentApp==='radio'){
         const k=e.key.toLowerCase();
@@ -310,6 +317,7 @@ window.addEventListener('keydown',e=>{
         return;
     }
     if(currentApp!=='music')return;
+    if(e.key.toLowerCase()==='p'){e.preventDefault();openShelf();return;}
     if(e.key.toLowerCase()==='q'){e.preventDefault();showApp('home');return;}
     const action={' ':'toggle',j:'previous',k:'next',h:'favorite',c:'repeat_one',v:'repeat_all'}[e.key.toLowerCase()];
     if(action){e.preventDefault();act(action);}
@@ -320,3 +328,301 @@ $('pair').onclick=async()=>{
 };
 // A recursive timer keeps polling after failures without overlapping requests.
 (async function tick(){ await update(); void updatePower(); setTimeout(tick,500); })();
+
+// Playlist selection is separate from playback state. Browsing sends GETs only.
+const shelfSlots=[['shelfFarPrevious',-2],['shelfPrevious',-1],['shelfPlay',0],['shelfNext',1],['shelfFarNext',2]];
+const shelfCanAnimate=typeof requestAnimationFrame==='function'&&typeof cancelAnimationFrame==='function';
+const shelfReduceMotion=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+const shelf = {items:[], selected:'', index:0, epoch:0, timer:0, loading:false, playing:false,
+    message:'正在读取收藏歌单', error:false, attempts:0, imageTimers:new Set(),
+    motion:{position:0,target:0,velocity:0,anchor:0,raf:0,last:0},
+    drag:{active:false,moved:false,suppress:false,pointer:-1,startX:0,startPosition:0,lastX:0,lastAt:0,velocity:0}};
+function shelfModulo(value,count){return ((value%count)+count)%count;}
+function stopShelfMotion(){
+    if(shelf.motion.raf&&shelfCanAnimate)cancelAnimationFrame(shelf.motion.raf);
+    shelf.motion.raf=0;shelf.motion.last=0;shelf.motion.velocity=0;
+    shelf.drag.active=false;
+    const flow=$('shelfFlow');if(flow){flow.dataset.dragging='false';flow.dataset.moving='false';}
+}
+function stopShelf(){
+    stopShelfMotion();
+    shelf.epoch++;clearTimeout(shelf.timer);
+    for(const timer of shelf.imageTimers)clearTimeout(timer);
+    shelf.imageTimers.clear();
+    for(const [id] of shelfSlots){
+        const img=$(id).querySelector('img');if(img){img.onload=img.onerror=null;img.remove();}
+        $(id).dataset.playlist='';
+    }
+}
+function shelfCover(button, item){
+    button.hidden=!item;
+    button.disabled=shelf.playing;
+    if(!item){button.dataset.playlist='';button.replaceChildren(document.createTextNode('♪'));return;}
+    if(button.dataset.playlist===item.id)return;
+    button.dataset.playlist=item.id;button.replaceChildren(document.createTextNode('♪'));
+    if(!/^\/api\/playlist-artwork\/[0-9]+$/.test(item.artwork||''))return;
+    const img=new Image();img.alt='';img.decoding='async';let attempts=0;
+    const epoch=shelf.epoch,selectedId=item.id;
+    img.onload=()=>{if(button.dataset.playlist===selectedId)img.style.opacity='1';};
+    img.onerror=()=>{
+        img.style.opacity='0';
+        if(++attempts>=6||currentApp!=='shelf'||shelf.epoch!==epoch||button.dataset.playlist!==selectedId)return;
+        const timer=setTimeout(()=>{
+            shelf.imageTimers.delete(timer);
+            if(currentApp==='shelf'&&shelf.epoch===epoch&&button.dataset.playlist===selectedId)
+                img.src=item.artwork+'?retry='+attempts;
+        },1000+attempts*500);
+        shelf.imageTimers.add(timer);
+    };
+    img.src=item.artwork;button.append(img);
+}
+function syncShelfSlots(){
+    const count=shelf.items.length,anchor=shelf.motion.anchor;
+    for(const [id,relative] of shelfSlots){
+        const button=$(id),item=count&&(count>1||relative===0)?shelf.items[shelfModulo(anchor+relative,count)]:null;
+        shelfCover(button,item);
+        if(!item)continue;
+        if(relative===0)button.ariaLabel='播放 '+item.title+'，空格';
+        else if(relative===-1)button.ariaLabel='上一张歌单 '+item.title+'，J';
+        else if(relative===1)button.ariaLabel='下一张歌单 '+item.title+'，K';
+    }
+}
+function updateShelfCopy(){
+    const item=shelf.items[shelf.index],count=shelf.items.length;
+    const moving=Boolean(shelf.motion.raf||shelf.drag.active||Math.abs(shelf.motion.target-shelf.motion.position)>.002);
+    $('shelfCount').textContent=count?`${shelf.index+1} / ${count}`:'';
+    $('shelfPlay').disabled=shelf.playing||shelf.loading||shelf.error||moving;
+    $('shelfControlPrevious').disabled=shelf.playing||moving||count<2;
+    $('shelfControlNext').disabled=shelf.playing||moving||count<2;
+    $('shelfControlPlay').disabled=shelf.playing||shelf.loading||shelf.error||moving||!item;
+    $('shelfTitle').textContent=shelf.playing?'正在请求播放…':shelf.error&&item?shelf.message:item?.title||'';
+    $('shelfTitle').title=item?`${item.title} · ${item.creator||''} · ${item.track_count||0} 首`:'';
+    $('shelfPlay').ariaLabel=item?'播放 '+item.title+'，空格':'播放选中的歌单，空格';
+    $('shelfMessage').hidden=Boolean(item);
+    $('shelfMessage').textContent=shelf.message;
+    $('shelfRetry').hidden=Boolean(item)||shelf.loading||shelf.playing;
+    $('shelfRefresh').disabled=shelf.loading||shelf.playing;
+    $('shelfRefresh').dataset.loading=String(shelf.loading);
+    $('shelfRefresh').ariaLabel=shelf.loading?'正在读取收藏':shelf.error?'读取失败，按 R 重试':'刷新收藏歌单，R';
+    $('shelfRefresh').title=shelf.loading?'正在读取收藏':shelf.error?'读取失败，按 R 重试':'刷新收藏歌单，R';
+    $('shelfStatus').textContent=shelf.playing?'正在请求播放':shelf.message;
+}
+function applyShelfMotion(){
+    const count=shelf.items.length,flow=$('shelfFlow'),motion=shelf.motion;
+    while(motion.position>=motion.anchor+1-.0001)motion.anchor++;
+    while(motion.position<=motion.anchor-1+.0001)motion.anchor--;
+    syncShelfSlots();
+    if(count){
+        const focus=shelfModulo(Math.round(motion.position),count);
+        if(focus!==shelf.index){shelf.index=focus;shelf.selected=shelf.items[focus].id;}
+    }
+    const moving=Boolean(motion.raf||shelf.drag.active||Math.abs(motion.target-motion.position)>.002);
+    if(flow){flow.dataset.moving=String(moving);flow.dataset.dragging=String(shelf.drag.active);}
+    for(const [id,relative] of shelfSlots){
+        const button=$(id),offset=relative+motion.anchor-motion.position,absolute=Math.abs(offset);
+        const distance=absolute<=1?84*absolute:84+44*(absolute-1);
+        const x=Math.sign(offset)*distance;
+        const y=7*Math.min(absolute,2.2);
+        const scale=Math.max(.64,.94-.13*Math.min(absolute,2.3));
+        const angleStep=35*Math.min(absolute,1)+20*Math.max(0,Math.min(absolute-1,1));
+        const angle=-Math.sign(offset)*angleStep;
+        const z=-72*Math.min(absolute,2.5);
+        const opacity=Math.max(0,1-.19*Math.min(absolute,1)-.31*Math.max(0,absolute-1));
+        button.style.transform=`translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,${z.toFixed(2)}px) rotateY(${angle.toFixed(2)}deg) scale(${scale.toFixed(3)})`;
+        button.style.opacity=String(opacity);button.style.zIndex=String(1000-Math.round(absolute*100));
+        const prominence=Math.max(0,1-Math.min(absolute,1));
+        const shadowY=2+3*prominence;
+        const shadowBlur=6+6*prominence;
+        const shadowAlpha=.24+.18*prominence;
+        button.style.boxShadow=`0 ${shadowY.toFixed(1)}px ${shadowBlur.toFixed(1)}px rgba(0,0,0,${shadowAlpha.toFixed(2)})`;
+        button.style.setProperty?.('--edge-shade',String(Math.min(.72,absolute*.62)));
+        button.disabled=shelf.playing||moving||(id==='shelfPlay'&&(shelf.loading||shelf.error));
+    }
+    updateShelfCopy();
+}
+function settleShelfMotion(){
+    const motion=shelf.motion;
+    motion.position=motion.target;motion.velocity=0;motion.raf=0;motion.last=0;
+    applyShelfMotion();
+}
+function shelfMotionFrame(now){
+    const motion=shelf.motion;
+    if(currentApp!=='shelf'){stopShelfMotion();return;}
+    const dt=motion.last?Math.min(.032,(now-motion.last)/1000):1/60;motion.last=now;
+    const error=motion.target-motion.position;
+    motion.velocity+=(error*185-motion.velocity*24)*dt;
+    motion.position+=motion.velocity*dt;
+    if(Math.abs(error)<.0015&&Math.abs(motion.velocity)<.018){settleShelfMotion();return;}
+    applyShelfMotion();motion.raf=requestAnimationFrame(shelfMotionFrame);
+}
+function startShelfMotion(){
+    if(shelfReduceMotion||!shelfCanAnimate){settleShelfMotion();return;}
+    if(shelf.motion.raf)return;
+    shelf.motion.last=0;shelf.motion.raf=requestAnimationFrame(shelfMotionFrame);applyShelfMotion();
+}
+function renderShelf(){
+    const view=document.querySelector('.shelf-view');
+    view.dataset.busy=String(shelf.playing);view.setAttribute('aria-busy',String(shelf.loading||shelf.playing));
+    applyShelfMotion();
+}
+async function loadShelf(refresh=false){
+    const epoch=shelf.epoch;shelf.loading=true;shelf.error=false;renderShelf();
+    try{
+        const value=await (await read('/api/playlists'+(refresh?'?refresh=1':''))).json();
+        if(currentApp!=='shelf'||epoch!==shelf.epoch)return;
+        if(value.ok&&Array.isArray(value.items)){
+            const items=value.items.filter(x=>x&&typeof x.id==='string'&&/^\d+$/.test(x.id)&&typeof x.title==='string');
+            shelf.items=items;shelf.index=Math.max(0,items.findIndex(x=>x.id===shelf.selected));
+            shelf.selected=items[shelf.index]?.id||'';
+            stopShelfMotion();shelf.motion.position=shelf.index;shelf.motion.target=shelf.index;shelf.motion.anchor=shelf.index;
+            shelf.loading=Boolean(value.loading);shelf.error=Boolean(value.stale);
+            shelf.message=value.message||(items.length?'只显示收藏的歌单':'还没有收藏的歌单\n在网易云收藏后，按 R 刷新');
+        }else{
+            shelf.loading=Boolean(value.loading);shelf.error=!shelf.loading;
+            shelf.message=value.message||'暂时读不到收藏歌单，请按 R 重试';
+        }
+        if(shelf.loading){
+            if(++shelf.attempts<75)shelf.timer=setTimeout(()=>loadShelf(),800);
+            else{shelf.loading=false;shelf.error=true;shelf.message='读取较慢，请稍后按 R 重试';}
+        }
+    }catch(error){
+        if(currentApp!=='shelf'||epoch!==shelf.epoch)return;
+        shelf.loading=false;shelf.error=true;shelf.message='连接不到 Mac，请检查桥接后按 R 重试';
+    }
+    if(currentApp==='shelf'&&epoch===shelf.epoch)renderShelf();
+}
+function openShelf(){
+    if(currentApp!=='music'&&currentApp!=='home')return;
+    shelf.epoch++;shelf.attempts=0;shelf.message='正在读取收藏歌单';
+    stopShelfMotion();shelf.motion.position=shelf.index;shelf.motion.target=shelf.index;shelf.motion.anchor=shelf.index;
+    showApp('shelf');renderShelf();void loadShelf();
+}
+function moveShelf(delta){
+    if(shelf.playing||!shelf.items.length)return;
+    const direction=Math.sign(delta);if(!direction||shelf.items.length<2)return;
+    if(!shelfCanAnimate||shelfReduceMotion){
+        const next=shelfModulo(shelf.index+direction,shelf.items.length);
+        shelf.index=next;shelf.selected=shelf.items[next].id;
+        shelf.motion.position+=direction;shelf.motion.target=shelf.motion.position;shelf.motion.anchor=shelf.motion.position;
+        renderShelf();return;
+    }
+    const currentDirection=Math.sign(shelf.motion.target-shelf.motion.position)||Math.sign(shelf.motion.velocity);
+    shelf.motion.target=currentDirection&&currentDirection!==direction?Math.round(shelf.motion.position)+direction:shelf.motion.target+direction;
+    if(Math.abs(shelf.motion.target-shelf.motion.position)>4)
+        shelf.motion.target=shelf.motion.position+direction*4;
+    startShelfMotion();
+}
+function refreshShelf(){
+    if(shelf.loading||shelf.playing)return;
+    stopShelfMotion();shelf.motion.position=Math.round(shelf.motion.position);shelf.motion.target=shelf.motion.position;shelf.motion.anchor=shelf.motion.position;
+    clearTimeout(shelf.timer);shelf.attempts=0;void loadShelf(true);
+}
+async function playShelf(){
+    const moving=shelf.motion.raf||shelf.drag.active||Math.abs(shelf.motion.target-shelf.motion.position)>.002;
+    const item=shelf.items[shelf.index];if(!item||shelf.playing||shelf.loading||shelf.error||moving)return;
+    shelf.playing=true;renderShelf();const epoch=shelf.epoch;
+    let resultMessage='';
+    try{
+        const response=await fetch('/api/playlists/play',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({id:item.id,request_id:crypto.randomUUID()}),signal:AbortSignal.timeout(25000)});
+        if(response.status===401){await reconnect();resultMessage='连接已恢复，请重新确认播放';}
+        else{
+            const value=await response.json();
+            if(value.ok){
+                if(currentApp==='shelf'&&epoch===shelf.epoch){showApp('music');notice('已请求播放歌单，等待网易云更新');}
+            }else resultMessage=value.message||value.error||'未能播放，请检查 Mac 网易云';
+        }
+    }catch(error){resultMessage='播放结果未知，请先检查 Mac；没有自动重试';}
+    finally{
+        shelf.playing=false;
+        if(currentApp==='shelf'&&epoch===shelf.epoch){
+            if(resultMessage){shelf.message=resultMessage;$('shelfTitle').textContent=resultMessage;}
+            renderShelf();
+            if(resultMessage){$('shelfTitle').textContent=resultMessage;$('shelfTitle').title=resultMessage;}
+        }
+    }
+}
+function handleShelfKey(e){
+    const key=e.key.toLowerCase();
+    if(['escape','q','j','k','arrowleft','arrowright',' ','enter','r'].includes(key))e.preventDefault();
+    if(key==='q'||key==='escape')showApp('home');
+    else if(key==='j'||key==='arrowleft')moveShelf(-1);
+    else if(key==='k'||key==='arrowright')moveShelf(1);
+    else if(key===' '||key==='enter')void playShelf();
+    else if(key==='r')refreshShelf();
+}
+$('openShelf').onclick=openShelf;
+$('shelfBack').onclick=()=>showApp('home');
+$('shelfPrevious').onclick=()=>moveShelf(-1);$('shelfNext').onclick=()=>moveShelf(1);
+$('shelfPlay').onclick=()=>void playShelf();$('shelfRetry').onclick=$('shelfRefresh').onclick=refreshShelf;
+$('shelfControlPrevious').onclick=()=>moveShelf(-1);$('shelfControlNext').onclick=()=>moveShelf(1);
+$('shelfControlPlay').onclick=()=>void playShelf();
+const shelfFlow=$('shelfFlow');
+if(shelfFlow&&typeof shelfFlow.addEventListener==='function'){
+    const finishShelfDrag=e=>{
+        if(!shelf.drag.active||e.pointerId!==shelf.drag.pointer)return;
+        shelf.drag.active=false;shelfFlow.dataset.dragging='false';
+        if(shelfFlow.hasPointerCapture?.(e.pointerId))shelfFlow.releasePointerCapture(e.pointerId);
+        if(shelf.drag.moved){
+            const projected=shelf.motion.position+shelf.drag.velocity*.12;
+            const minimum=shelf.drag.startPosition-2,maximum=shelf.drag.startPosition+2;
+            shelf.motion.target=Math.max(minimum,Math.min(maximum,Math.round(projected)));
+            shelf.motion.velocity=shelf.drag.velocity;
+            shelf.drag.suppress=true;
+            startShelfMotion();
+        }else if(shelf.drag.wasMoving){
+            // A tap during animation must not freeze a fractional pose or play it.
+            shelf.drag.suppress=true;shelf.motion.target=shelf.drag.resumeTarget;startShelfMotion();
+        }else applyShelfMotion();
+        if(e.type==='pointercancel')shelf.drag.suppress=true;
+    };
+    const beginShelfDrag=e=>{
+        if(shelf.drag.active||(e.pointerType==='mouse'&&e.button!==0))return;
+        // Suppress only the preceding drag's click, never a new independent tap.
+        shelf.drag.suppress=false;
+        if(shelf.playing||shelf.loading||shelf.items.length<2)return;
+        shelf.drag.wasMoving=Boolean(shelf.motion.raf||Math.abs(shelf.motion.target-shelf.motion.position)>.002);
+        shelf.drag.resumeTarget=shelf.motion.target;
+        stopShelfMotion();
+        shelf.drag.active=true;shelf.drag.moved=false;shelf.drag.pointer=e.pointerId;
+        shelf.drag.startX=shelf.drag.lastX=e.clientX;shelf.drag.startPosition=shelf.motion.position;
+        shelf.drag.lastAt=performance.now();shelf.drag.velocity=0;shelf.motion.target=shelf.motion.position;
+        shelfFlow.dataset.dragging='true';
+        // Leave a tap targeted at its cover. Capturing here retargets click to the track.
+    };
+    const moveShelfDrag=e=>{
+        if(!shelf.drag.active||e.pointerId!==shelf.drag.pointer)return;
+        const dx=e.clientX-shelf.drag.startX;if(!shelf.drag.moved&&Math.abs(dx)<5)return;
+        if(!shelf.drag.moved)shelfFlow.setPointerCapture?.(e.pointerId);
+        shelf.drag.moved=true;e.preventDefault();
+        const now=performance.now(),dt=Math.max(.008,(now-shelf.drag.lastAt)/1000);
+        shelf.drag.velocity=(shelf.drag.lastX-e.clientX)/84/dt;
+        shelf.drag.lastX=e.clientX;shelf.drag.lastAt=now;
+        const dragPosition=shelf.drag.startPosition-dx/84;
+        shelf.motion.position=Math.max(shelf.drag.startPosition-2.15,Math.min(shelf.drag.startPosition+2.15,dragPosition));
+        shelf.motion.target=shelf.motion.position;applyShelfMotion();
+    };
+    shelfFlow.addEventListener('pointerdown',beginShelfDrag);
+    shelfFlow.addEventListener('pointermove',moveShelfDrag);
+    // The 3D track cannot be a hit-test plane: it obscures cards behind z=0.
+    // Its empty areas hit the outer view instead, which keeps gap swipes working.
+    const shelfView=document.querySelector('.shelf-view');
+    shelfView.addEventListener('pointerdown',e=>{
+        if(e.target!==shelfView)return;
+        const bounds=shelfFlow.getBoundingClientRect();
+        if(e.clientX>=bounds.left&&e.clientX<=bounds.right&&e.clientY>=bounds.top&&e.clientY<=bounds.bottom)beginShelfDrag(e);
+    });
+    shelfView.addEventListener('pointermove',e=>{if(e.target===shelfView)moveShelfDrag(e);});
+    shelfFlow.addEventListener('pointerup',finishShelfDrag);
+    shelfFlow.addEventListener('pointercancel',finishShelfDrag);
+    // An uncaptured tap may end outside the track; never leave the gesture active.
+    if(typeof window!=='undefined'){
+        window.addEventListener('pointerup',finishShelfDrag);
+        window.addEventListener('pointercancel',finishShelfDrag);
+    }
+    shelfFlow.addEventListener('click',e=>{
+        if(!shelf.drag.suppress)return;
+        shelf.drag.suppress=false;e.preventDefault();e.stopPropagation();
+    },true);
+}
+if(currentApp==='shelf'){renderShelf();void loadShelf();}

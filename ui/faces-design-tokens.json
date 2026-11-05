@@ -1,0 +1,232 @@
+{
+  "meta": {
+    "name": "M5 Faces UI Design System",
+    "version": "1.1.1",
+    "effective_date": "2026-11-05",
+    "timezone": "Asia/Shanghai",
+    "authority": "ui/FACES-DESIGN-SYSTEM.md",
+    "conflict_policy": "markdown_owns_semantics_json_owns_exact_values_same_version_mismatch_blocks_work"
+  },
+  "canvas": {
+    "width": 320,
+    "height": 240,
+    "safe_margin_x": 8,
+    "css_pixel_to_logical_pixel": 1
+  },
+  "color": {
+    "paper": {
+      "base": "#F4E7D3",
+      "radio": "#F4E3C4",
+      "control": "#FAEFDD"
+    },
+    "ink": {
+      "primary": "#111111",
+      "secondary": "#4F4D49",
+      "music_muted": "#302D29",
+      "disabled": "#61594D"
+    },
+    "accent": {
+      "music_static": "#FFD21F",
+      "music_dynamic_fallback": "#D7C9B2",
+      "radio": "#FF655F",
+      "companion": "#49DDA2",
+      "focus": "#5F67FF",
+      "liked": "#EF263F"
+    },
+    "status": {
+      "charging": "#16844B",
+      "low": "#B65D00",
+      "critical": "#C52F32"
+    },
+    "line": {
+      "track": "#D1C5B2"
+    },
+    "dynamic_accent_foreground": {
+      "relative_luminance_threshold": 0.179,
+      "light_accent_ink": "#000000",
+      "dark_accent_ink": "#FFFFFF",
+      "fallback_accent": "#D7C9B2",
+      "fallback_ink_override": "#111111"
+    }
+  },
+  "token_aliases": {
+    "paper.base": "color.paper.base",
+    "paper.radio": "color.paper.radio",
+    "paper.control": "color.paper.control",
+    "ink.primary": "color.ink.primary",
+    "ink.secondary": "color.ink.secondary",
+    "ink.musicMuted": "color.ink.music_muted",
+    "ink.disabled": "color.ink.disabled",
+    "accent.music": "color.accent.music_static",
+    "accent.radio": "color.accent.radio",
+    "accent.companion": "color.accent.companion",
+    "accent.focus": "color.accent.focus",
+    "accent.liked": "color.accent.liked",
+    "line.track": "color.line.track",
+    "display.hero": "typography.roles.display_hero",
+    "display.card": "typography.roles.display_card",
+    "display.card.compact": "typography.roles.display_card_compact",
+    "display.page": "typography.roles.display_page",
+    "title.primary": "typography.roles.title_primary",
+    "title.collection": "typography.roles.title_collection",
+    "body.primary": "typography.roles.body_primary",
+    "meta.standard": "typography.roles.meta_standard",
+    "meta.compact": "typography.roles.meta_compact",
+    "shortcut": "typography.roles.shortcut"
+  },
+  "typography": {
+    "families": {
+      "display": ["Impact", "Arial Black", "sans-serif"],
+      "ui_sans_web": ["-apple-system", "BlinkMacSystemFont", "PingFang SC", "Noto Sans CJK SC", "sans-serif"],
+      "ui_sans_device": ["Faces 12", "Faces 16", "Noto Sans CJK SC Regular derivative"],
+      "mono": ["Menlo", "monospace"]
+    },
+    "roles": {
+      "display_hero": {"size": 42, "line_height": 36, "weight": 900},
+      "display_card": {"size": 29, "line_height": 29, "weight": 900},
+      "display_card_compact": {"size": 26, "line_height": 29, "weight": 900},
+      "display_page": {"size": 18, "line_height": 17, "weight": 900},
+      "title_primary": {"size": 18, "line_height": 19, "weight": 850},
+      "title_collection": {"size": 15, "line_height": 18, "weight": 850},
+      "body_primary": {"size": 11, "line_height_min": 14, "line_height_max": 17, "weight_min": 550, "weight_max": 650},
+      "meta_standard": {"size": 9, "line_height": 12, "weight": 400},
+      "meta_compact": {"size_min": 7, "size_max": 8, "line_height_min": 9, "line_height_max": 12, "weight_min": 700, "weight_max": 800},
+      "shortcut": {"size_min": 8, "size_max": 11, "line_height_factor": 1, "weight_min": 800, "weight_max": 900}
+    },
+    "minimums": {
+      "dynamic_body": 8,
+      "time": 8,
+      "shortcut": 8,
+      "micro_status": 7
+    }
+  },
+  "geometry": {
+    "stroke": {"default": 1.5, "divider_max": 2},
+    "radius": {"button": 8, "cover": 3, "status": 7},
+    "header": {
+      "height_min": 39,
+      "height_max": 40,
+      "back_visual_size": 29,
+      "back_icon_size": 17,
+      "title_gap": 7,
+      "battery_min_width": 43,
+      "right_edge": 312,
+      "indicator_gap": 4
+    },
+    "control": {
+      "detail_height": 30,
+      "compact_height": 25,
+      "bottom_margin": 8,
+      "collection_bottom_margin_exception": 1,
+      "collection_y": 214,
+      "collection_height": 25,
+      "pressed_translate_y": 1
+    },
+    "touch": {
+      "preferred_min_width": 32,
+      "preferred_min_height": 32,
+      "may_expand_invisibly": true,
+      "overlap_allowed": false
+    },
+    "cover": {
+      "title_gap": 9,
+      "border": 0,
+      "radius": 3,
+      "center_shadow": "0 5px 12px rgba(0,0,0,.42)",
+      "side_shadow": "0 2px 6px rgba(0,0,0,.24)"
+    },
+    "shelf": {
+      "visible_height_center": 120,
+      "visible_height_near": 96,
+      "visible_height_far": 72,
+      "angle_near_deg": 35,
+      "angle_far_deg": 55,
+      "halo_size": 140,
+      "halo_opacity": 0.32,
+      "halo_z": 0,
+      "flow_z": 1
+    }
+  },
+  "motion": {
+    "radio_tuner_duration_ms": 260,
+    "radio_tuner_easing": "cubic-bezier(.2,.8,.2,1)",
+    "reduced_motion_required": true,
+    "retain_last_complete_scene_until_next_ready": true,
+    "drag_click_suppression_required": true
+  },
+  "icons": {
+    "source": "Phosphor-derived existing paper icon set",
+    "license": "MIT",
+    "default_size": 13,
+    "back_size": 17,
+    "reuse_across_pages": true,
+    "collection_refresh": {
+      "name": "ArrowClockwise",
+      "weight": "bold",
+      "size": 13,
+      "path_style": "single-filled"
+    }
+  },
+  "asset_reuse": {
+    "prefer_clean_source_layer": true,
+    "audit_baked_border_radius_shadow_and_background": true,
+    "semantic_mask_must_match_object_shape": true,
+    "rectangular_crop_for_round_object_forbidden": true,
+    "layout_box_visible_shape_and_sample_box_are_distinct": true,
+    "single_boundary_owner_required": true
+  },
+  "quality_gates": {
+    "native_canvas_review": {
+      "width": 320,
+      "height": 240,
+      "scale": 1
+    },
+    "magnified_detail_review_min_scale": 4,
+    "inspect_all_edges_corners_clipping_and_antialiasing": true,
+    "compare_default_pressed_focus_loading_and_disabled": true,
+    "compare_required_states_visually": true,
+    "required_states": ["default", "connected", "loading", "empty", "failure", "stale", "action_sending", "action_result_unknown", "disabled", "animation_in_progress"],
+    "return_and_retry_paths_required": true,
+    "token_alias_targets_must_exist": true,
+    "automated_tests_do_not_replace_visual_review": true,
+    "owner_acceptance_scope_must_be_explicit": true,
+    "handoff_must_list_superseded_variants": true,
+    "handoff_is_not_implementation": true,
+    "handoff_required_fields": ["authority_version", "effective_geometry", "frozen_items", "pending_items", "superseded_variants", "delivery_boundary"]
+  },
+  "navigation_semantics": {
+    "home_music": "one-card-two-regions",
+    "home_music_visual_divider": false,
+    "home_shortcut_keycap": "shared-black-capsule",
+    "home_music_actions": {
+      "now_playing": {"x": 8, "y": 34, "width": 184, "height": 92, "key": "M", "route": "now-playing"},
+      "collection": {"x": 192, "y": 34, "width": 120, "height": 92, "key": "P", "route": "collection"}
+    },
+    "home_collection_sleeve": {
+      "action_x": 192,
+      "action_width": 120,
+      "record_diameter": 104,
+      "record_source_mask": {
+        "shape": "circle",
+        "coordinate_space": "record_element_local_css_px",
+        "sample_box_width": 104,
+        "sample_box_height": 92,
+        "radius": 52,
+        "local_center_x": 52,
+        "local_center_y": 46,
+        "vertical_overflow_each_side": 6,
+        "parent_clips_to_card": true
+      },
+      "sleeve_x": 194,
+      "sleeve_y": 98,
+      "sleeve_width": 116,
+      "sleeve_height": 26,
+      "shared_center_x": 252,
+      "side_reveal": 6,
+      "card_edge_inset": 2
+    },
+    "related_content_entry": "content-action-row",
+    "content_action_pill": {"width": 50, "height": 20, "shared_surface": true},
+    "collection_footer_order": ["refresh:R", "previous:J", "play:SPC", "next:K"]
+  }
+}

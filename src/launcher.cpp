@@ -15,6 +15,10 @@
 #include "FacesScreenPower.h"
 extern const uint8_t homeStageStart[] asm("_binary_assets_home_stage_png_start");
 extern const uint8_t homeStageEnd[] asm("_binary_assets_home_stage_png_end");
+extern const uint8_t homeMusicPressedStart[] asm("_binary_assets_home_stage_music_pressed_png_start");
+extern const uint8_t homeMusicPressedEnd[] asm("_binary_assets_home_stage_music_pressed_png_end");
+extern const uint8_t homeCollectionPressedStart[] asm("_binary_assets_home_stage_collection_pressed_png_start");
+extern const uint8_t homeCollectionPressedEnd[] asm("_binary_assets_home_stage_collection_pressed_png_end");
 
 namespace {
 RTC_NOINIT_ATTR suite::Ticket bootTicket;
@@ -57,6 +61,12 @@ void draw(){
 // The bottom retains a visible 1 px gap instead of being clipped.
 // Only Home launches use this; other apps and automatic idle entry stay instant.
 void pressCard(suite::App app){
+    if((app==suite::App::Music||app==suite::App::Collection)&&faces_screen::appVisible()){
+        // One card owns the outline; the baked variants change only the chosen inner region.
+        auto start=app==suite::App::Collection?homeCollectionPressedStart:homeMusicPressedStart;
+        auto end=app==suite::App::Collection?homeCollectionPressedEnd:homeMusicPressedEnd;
+        menu.setClipRect(8,34,304,92);menu.drawPng(start,end-start,0,0);menu.clearClipRect();menu.pushSprite(0,0);delay(160);return;
+    }
     const int index=int(app)-1;
     if(index<0||index>=3||!faces_screen::appVisible())return;
     const auto& c=home_layout::cards[index];
@@ -91,9 +101,12 @@ bool inputReady(){return int32_t(millis()-readyAt)>=0;}
 }
 }
 void setup(){
-    active=suite::consume(bootTicket,esp_reset_reason()==ESP_RST_SW);
+    Serial.begin(115200);
+    Serial.printf("SUITE_BOOT reset_reason=%d ticket=%u\n",int(esp_reset_reason()),unsigned(bootTicket.app));
+    const auto entry=suite::consume(bootTicket,esp_reset_reason()==ESP_RST_SW);
+    active=suite::module(entry); // Collection is an entry into the same Music module, not another audio app.
     if(active==suite::App::Connection){connection_app::setup();readyAt=millis()+700;return;}
-    if(active==suite::App::Music){cloud_app::setup();readyAt=millis()+700;return;}
+    if(active==suite::App::Music){cloud_app::setup(suite::startsCollection(entry));readyAt=millis()+700;return;}
     if(active==suite::App::Companion){companion_app::setup();readyAt=millis()+700;return;}
     if(active==suite::App::Radio){radio_app::setup();readyAt=millis()+700;return;}
     Serial.begin(115200);
@@ -129,6 +142,7 @@ void loop(){
         char c=Serial.read();
         if(c=='\n'){
             if(!serialOverflow&&serialCommand=="HOME STATUS")Serial.printf("HOME wifi=%d rssi=%d idle_ms=%lu touch=%d keyboard=%d\n",int(WiFi.status()),WiFi.status()==WL_CONNECTED?WiFi.RSSI():0,(unsigned long)(millis()-lastInput),M5.Touch.getCount(),keyboardOK);
+            if(!serialOverflow&&serialCommand=="COLLECTION OPEN"&&suite::inputReady())suite::open(suite::App::Collection);
             if(!serialOverflow&&serialCommand=="MUSIC OPEN"&&suite::inputReady())suite::open(suite::App::Music);
             if(!serialOverflow&&serialCommand=="RADIO OPEN"&&suite::inputReady())suite::open(suite::App::Radio);
             if(!serialOverflow&&serialCommand=="COMPANION OPEN"&&suite::inputReady())suite::open(suite::App::Companion);

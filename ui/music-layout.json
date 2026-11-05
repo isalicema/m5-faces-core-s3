@@ -47,5 +47,12 @@
   "powerRight": 312,
   "powerY": 12,
   "sourceRight": 175,
-  "powerGap": 4
+  "powerGap": 4,
+  "collectionEntry": {
+    "anchor": "meta-actions-after-heart",
+    "w": 50,
+    "h": 20,
+    "key": "P",
+    "role": "content-collection-sibling"
+  }
 }

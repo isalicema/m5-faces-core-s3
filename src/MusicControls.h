@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include "MusicLayout.h"
+#include "MusicContentActions.h"
 namespace music {
 inline bool homeTouch(int x,int y) {
     return x>=0&&x<music_layout::homeTouchWidth&&y>=0&&y<music_layout::homeTouchHeight;
@@ -25,7 +26,7 @@ inline Action touch(int x,int y,int heartY=-100) {
         const Action actions[]={Previous,Toggle,Next,Favorite,RepeatOne,RepeatAll};
         for(int i=0;i<buttonCount;++i)if(x>=buttonX[i]&&x<buttonX[i]+buttonWidth[i])return actions[i];
     }
-    if(x>=metaX&&x<metaX+68&&y>=heartY&&y<heartY+heartHeight)return Favorite;
+    if(music_content::touch(x,y,heartY)==music_content::Like)return Favorite;
     return None;
 }
 }

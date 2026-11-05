@@ -11,12 +11,16 @@ int main(){
     uint32_t start=0xfffffff0;
     assert(!homeIdleDue(App::Home,uint32_t(start+179999),start));
     assert(homeIdleDue(App::Home,uint32_t(start+180000),start));
-    for(auto app:{App::Home,App::Music,App::Radio,App::Companion}){
+    for(auto app:{App::Home,App::Music,App::Radio,App::Companion,App::Collection}){
         auto t=ticket(app);assert(consume(t,true)==app);assert(consume(t,true)==App::Home);
         t=ticket(app);assert(consume(t,false)==App::Home);
     }
     auto t=ticket(App::Radio);t.check^=1;assert(consume(t,true)==App::Home);
     t=ticket(App(99));assert(consume(t,true)==App::Home);
+    assert(key('p')==App::Collection&&key('P')==App::Collection);
+    assert(module(App::Collection)==App::Music&&startsCollection(App::Collection));
+    assert(module(App::Music)==App::Music&&!startsCollection(App::Music));
+    assert(touch(191,80)==App::Music&&touch(192,80)==App::Collection);
     assert(key('m')==App::Music&&key('M')==App::Music);
     assert(key('r')==App::Radio&&key('R')==App::Radio);
     assert(key('a')==App::Companion&&key('A')==App::Companion);
@@ -25,7 +29,7 @@ int main(){
     assert(key('s')==App::Connection&&key('S')==App::Connection);
     assert(touch(0,0)==App::Connection&&touch(189,33)==App::Connection);
     assert(touch(100,34)==App::Music); // Header must never steal the hero's top edge.
-    assert(touch(8,34)==App::Music&&touch(311,125)==App::Music);
+    assert(touch(8,34)==App::Music&&touch(311,125)==App::Collection);
     assert(touch(8,132)==App::Radio&&touch(156,213)==App::Radio);
     for(int y:{126,127,131,214,239})assert(touch(100,y)==App::Home);
     for(int x:{7,157,162,312})assert(touch(x,170)==App::Home);

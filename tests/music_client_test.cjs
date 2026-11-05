@@ -5,10 +5,11 @@ const response=(code,data)=>({status:code,ok:code>=200&&code<300,json:async()=>d
 const flush=()=>new Promise(r=>setImmediate(r));
 function setup(fetcher){
  const elements={},buttons=[{dataset:{action:'toggle'},disabled:false}];
+ const element=()=>({textContent:'',dataset:{},style:{setProperty(k,v){this[k]=v}},replaceChildren(){},setAttribute(k,v){this[k]=v},querySelector(){return null}});
  const calls=[],timers=new Map();let timerId=0;const ctx={console,AbortSignal:{timeout:()=>undefined},crypto:{randomUUID:()=> 'unique-request'},
   fetch:async(path,opts)=>{calls.push([path,opts]);return fetcher(path,opts)},
   setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId},clearTimeout:id=>timers.delete(id),requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{},performance:{now:()=>0},Image:class {},URL:{createObjectURL:()=> 'blob:test',revokeObjectURL:()=>{}},
-  document:{getElementById:id=>elements[id]??=( {textContent:'',dataset:{},style:{setProperty(k,v){this[k]=v}},replaceChildren(){}} ),querySelectorAll:()=>buttons},window:{handlers:{},addEventListener(name,fn){(this.handlers[name]??=[]).push(fn)}}};
+  document:{getElementById:id=>elements[id]??=element(),querySelector:selector=>elements[selector]??=element(),querySelectorAll:()=>buttons,createTextNode:text=>({textContent:text})},window:{handlers:{},addEventListener(name,fn){(this.handlers[name]??=[]).push(fn)}}};
  vm.createContext(ctx);vm.runInContext(source,ctx);return{ctx,elements,buttons,calls,finishPress(){for(const [id,t] of timers){if(t.ms===160){timers.delete(id);t.fn();}}}};
 }
 (async()=>{
@@ -172,20 +173,22 @@ function setup(fetcher){
  vm.runInContext('state.position=1;renderLyric()',g.ctx);
  assert.equal(g.elements.lyricText.textContent,'first');
  const h=setup(async()=>response(200,good));await flush();
- assert.equal(h.elements.screen.dataset.app,'home');const menuRequests=h.calls.length;
+ assert.equal(h.elements.screen.dataset.app,'home');
  h.elements.openMusic.onclick();assert.equal(h.elements.screen.dataset.app,'home');assert.equal(h.elements.openMusic.dataset.pressed,'true');h.elements.openRadio.onclick();h.finishPress();assert.equal(h.elements.screen.dataset.app,'music');assert.equal(h.elements.openMusic.dataset.pressed,'false');
  h.elements.homeButton.onclick();assert.equal(h.elements.screen.dataset.app,'home');
  h.elements.openRadio.onclick();h.finishPress();assert.equal(h.elements.screen.dataset.app,'radio');
  h.elements.radioHome.onclick();assert.equal(h.elements.screen.dataset.app,'home');
- assert.equal(h.calls.length,menuRequests);
+ h.elements.openShelfHome.onclick();h.finishPress();assert.equal(h.elements.screen.dataset.app,'shelf');
+ h.elements.shelfBack.onclick();assert.equal(h.elements.screen.dataset.app,'home');
+ assert.equal(h.calls.filter(call=>call[0]==='/api/action').length,0);
  // All launcher routes keep the same escape path; navigation sends no player commands.
- for(const [key,app] of [['m','music'],['r','radio'],['a','companion'],['s','connection']]){
+ for(const [key,app] of [['m','music'],['p','shelf'],['r','radio'],['a','companion'],['s','connection']]){
    const emit=k=>h.ctx.window.handlers.keydown.forEach(fn=>fn({key:k,repeat:false,target:{tagName:'BODY'},preventDefault(){}}));
    emit(key);h.finishPress();assert.equal(h.elements.screen.dataset.app,app);
    emit('q');assert.equal(h.elements.screen.dataset.app,'home');
    emit(key);emit('Escape');h.finishPress();assert.equal(h.elements.screen.dataset.app,'home');
  }
- assert.equal(h.calls.length,menuRequests);
+ assert.equal(h.calls.filter(call=>call[0]==='/api/action').length,0);
  let batteryReport={received_at:Date.now()/1000,power:{valid:true,battery_present:true,usb_present:true,charging:true,percent:72}};
  const powerView=setup(async path=>response(200,path==='/api/power'?{device:batteryReport}:good));await flush();
  assert.equal(powerView.elements.musicPowerPercent.textContent,'72%');

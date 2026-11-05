@@ -7,6 +7,7 @@
 #include <Preferences.h>
 #include <cJSON.h>
 #include <atomic>
+#include <esp_heap_caps.h>
 #include <vector>
 #include "DirectInput.h"
 #include "PanelCoverage.h"
@@ -20,6 +21,11 @@
 #include "MusicPaper.h"
 #include "MusicIcons.h"
 #include "MusicTextWrap.h"
+#include "MusicShelf.h"
+#include "MusicShelfCache.h"
+#include "MusicShelfMotion.h"
+#include "MusicShelfGeometry.h"
+#include "MusicShelfAssets.h"
 #include "MusicVisualState.h"
 #include "MusicSync.h"
 #include "MusicConnection.h"
@@ -40,6 +46,7 @@ namespace cloud_app {
 namespace {
 using namespace music_layout;
 int heartTop=85;
+int contentPressed=-1;uint32_t contentPressedUntil=0;
 M5Faces_Keyboard3 keyboard;
 DirectInput input;
 KeyboardIndicators indicators;
@@ -76,14 +83,19 @@ std::atomic<bool> busy{false};
 uint32_t connectionStarted=0;
 InputEventQueue pendingInput;
 bool inputPumpReady=false;
+uint32_t shelfUpdateUs=0,shelfKeyboardUs=0,shelfInputPolls=0;
+bool shelfActiveForInput();
+void captureShelfTouch(int x,int y,bool down,bool began,bool ended,bool enabled,uint32_t now);
 void pollInput(){
     if(!inputPumpReady)return;
-    auto now=millis();if(now-lastPoll<5)return;lastPoll=now;
-    M5.update();if(faces_screen::tick()){dirty=true;lastDraw=0;}
+    bool onShelf=shelfActiveForInput();
+    auto now=millis();if(now-lastPoll<(onShelf?8:5))return;lastPoll=now;
+    uint32_t inputAt=micros();M5.update();if(onShelf){shelfUpdateUs+=micros()-inputAt;++shelfInputPolls;}if(faces_screen::tick()){dirty=true;lastDraw=0;}
     input_diagnostics::sample("music",faces_screen::touchEnabled());
     if(keyboardOK){
-        uint8_t raw[10]={};
+        uint8_t raw[10]={};uint32_t keyboardAt=micros();
         if(keyboard.readReg(M5FACES_REG_KEY,raw,sizeof(raw))==M5FACES_OK)input.feed(raw,now);
+        if(onShelf)shelfKeyboardUs+=micros()-keyboardAt;
         input.tick(now,[](uint8_t index,uint8_t layer){
 #ifdef FACES_SUITE
             if(!suite::inputReady())return;
@@ -94,6 +106,13 @@ void pollInput(){
         syncIndicators();
     }
     auto t=M5.Touch.getDetail();
+    if(shelfActiveForInput()){
+#ifdef FACES_SUITE
+        if(!suite::inputReady())return;
+#endif
+        captureShelfTouch(t.x,t.y,t.isPressed(),t.wasPressed(),t.wasReleased(),faces_screen::touchEnabled(),now);
+        return;
+    }
     if(faces_screen::touchEnabled()&&t.wasPressed()){
 #ifdef FACES_SUITE
         if(!suite::inputReady())return;
@@ -121,7 +140,52 @@ State state;
 std::vector<uint8_t> cover, scene;
 SemaphoreHandle_t stateLock;
 QueueHandle_t queue;
-struct Command { music::Action action; char track[32], request[40]; };
+struct Command { music::Action action; char track[32], request[40]; bool playlist=false; uint32_t shelfEpoch=0; };
+struct ShelfEntry { std::string id,title; int tracks=0; };
+struct ShelfArt { std::string id; std::vector<uint8_t> bytes; uint32_t retryAt=0,used=0; };
+struct ShelfState {
+    std::vector<ShelfEntry> items;
+    ShelfArt art[music_shelf::jpegCapacity];
+    size_t selected=0; bool loading=true,fetch=true,refresh=false,truncated=false,stale=false;
+    uint32_t pollAt=0,epoch=0,revision=0;int anchor=0,direction=1;
+    std::string selectedId,error;
+};
+ShelfState shelf;
+std::atomic<bool> shelfOpen{false};
+std::atomic<uint32_t> shelfPlayed{0};
+Preferences shelfPrefs;
+music_shelf::Motion shelfMotion;
+music_shelf::Gesture shelfGesture;
+music_shelf::TouchQueue shelfTouches;
+bool shelfFingerDown=false,shelfIgnoreEntryTouch=false;
+bool shelfReturnReady=false,shelfEntryFirst=false,shelfEntryWarm=false,shelfNormalFrame=false;
+uint16_t* shelfBeforePlay=nullptr;
+uint32_t shelfBeforePlayEpoch=0,shelfBeforePlayRevision=0,shelfShownRevision=0;
+size_t shelfBeforePlaySelected=0,shelfShownSelected=0;
+void releaseShelfPlaySnapshot(){if(shelfBeforePlay)heap_caps_free(shelfBeforePlay);shelfBeforePlay=nullptr;}
+uint32_t shelfReturnRevision=0,shelfReturnEpoch=0,shelfEntryAt=0;
+size_t shelfReturnSelected=0;
+void logShelfVisible(){if(!shelfEntryFirst)return;Serial.printf("SHELF_OPEN mode=%s first_visible_us=%lu\n",shelfEntryWarm?"warm":"cold",(unsigned long)(micros()-shelfEntryAt));shelfEntryFirst=false;}
+uint32_t shelfUiRevision=UINT32_MAX;
+M5Canvas shelfBackdrop(&M5.Display),shelfDecor(&M5.Display),shelfDecoder(&M5.Display);
+struct ShelfPixels { std::string id;uint16_t* pixels=nullptr;bool attempted=false,ready=false;uint32_t used=0; };
+ShelfPixels shelfPixels[music_shelf::decodedCapacity];
+bool shelfRendererReady=false,shelfRawSwapped=true,shelfDecorValid=false;
+std::string shelfDecorKey;
+uint32_t shelfDecodeCount=0,shelfDecodeUs=0,shelfDecodeMaxUs=0;
+struct ShelfPerf {uint32_t at=0,frames=0,total=0,max=0,raster=0,push=0,decor=0,pump=0,overBudget=0;} shelfPerf;
+bool beginShelfRenderer();
+void advanceShelf(uint32_t now);
+bool shelfActiveForInput(){return shelfOpen.load();}
+void captureShelfTouch(int x,int y,bool down,bool began,bool ended,bool enabled,uint32_t now){
+    if(shelfIgnoreEntryTouch){if(!down)shelfIgnoreEntryTouch=false;return;}
+    if(!enabled){if(shelfFingerDown)shelfTouches.push({music_shelf::TouchEvent::Cancel,int16_t(x),int16_t(y),now});shelfFingerDown=false;return;}
+    if(down&&!shelfFingerDown){shelfFingerDown=true;shelfTouches.push({music_shelf::TouchEvent::Down,int16_t(x),int16_t(y),now});}
+    else if(down)shelfTouches.push({music_shelf::TouchEvent::Move,int16_t(x),int16_t(y),now});
+    if((ended||!down)&&shelfFingerDown){shelfFingerDown=false;shelfTouches.push({music_shelf::TouchEvent::Up,int16_t(x),int16_t(y),now});}
+}
+
+
 constexpr uint16_t bg = music_colors::rgb565(music_paper::paper), ink = music_colors::rgb565(music_paper::ink), dim = music_colors::rgb565(music_paper::muted), accent = 0xE6D3;
 const cJSON* field(const cJSON* j, const char* k) { return cJSON_GetObjectItemCaseSensitive(j, k); }
 const char* text(const cJSON* j, const char* k) { auto v = field(j,k); return cJSON_IsString(v) ? v->valuestring : ""; }
@@ -162,6 +226,68 @@ bool get(const String& path, std::vector<uint8_t>& body, size_t limit, const Str
     if(!payload.isEmpty())Serial.printf("HTTP action code=%d bytes=%u expected=%d elapsed_ms=%lu rssi=%d\n",code,unsigned(count),length,(unsigned long)(millis()-requestAt),WiFi.RSSI());
     http.end(); return ok && (code==200 || (!payload.isEmpty() && code==409));
 }
+// The UI only changes intent. All HTTP and JPEG retrieval run in the worker.
+void shelfWork() {
+    if(!shelfOpen.load())return;
+    uint32_t epoch;bool fetch=false,refresh=false;
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    epoch=shelf.epoch;
+    if(shelf.fetch&&int32_t(millis()-shelf.pollAt)>=0){fetch=true;refresh=shelf.refresh;shelf.refresh=false;}
+    xSemaphoreGive(stateLock);
+    if(fetch){
+        std::vector<uint8_t> bytes;
+        bool ok=get(refresh?"/api/playlists?refresh=1":"/api/playlists",bytes,256000);
+        bytes.push_back(0);auto j=ok?cJSON_Parse(reinterpret_cast<char*>(bytes.data())):nullptr;
+        std::vector<ShelfEntry> entries;bool valid=j&&flag(j,"ok")&&cJSON_IsArray(field(j,"items"));
+        bool truncated=false;
+        if(valid){
+            const cJSON* item=nullptr;
+            cJSON_ArrayForEach(item,field(j,"items")){
+                const char* id=text(item,"id");
+                if(!music_shelf::validId(id))continue;
+                if(entries.size()>=music_shelf::maxItems){truncated=true;break;}
+                std::string title=text(item,"title");
+                if(title.size()>384){size_t end=384;while(end&&(static_cast<unsigned char>(title[end])&0xc0)==0x80)--end;title.resize(end);}
+                entries.push_back({id,title,int(value(item,"track_count"))});
+            }
+        }
+        xSemaphoreTake(stateLock,portMAX_DELAY);
+        if(shelfOpen.load()&&shelf.epoch==epoch){
+            shelf.loading=j&&flag(j,"loading");shelf.stale=(j&&flag(j,"stale"))||(!valid&&!shelf.items.empty());shelf.fetch=shelf.loading;shelf.pollAt=millis()+1200;
+            if(valid){
+                shelf.items=std::move(entries);shelf.selected=0;shelf.truncated=truncated;shelf.error=shelf.stale?text(j,"message"):"";
+                shelf.selected=music_shelf::restoredSelection(shelf.items,shelf.selectedId);
+                if(!shelf.items.empty())shelf.selectedId=shelf.items[shelf.selected].id;
+                shelf.anchor=int(shelf.selected);++shelf.revision;
+            }else shelf.error=j&&text(j,"message")[0]?text(j,"message"):"无法读取歌单，请检查 Mac";
+            dirty=true;
+        }
+        xSemaphoreGive(stateLock);
+        if(j)cJSON_Delete(j);
+        return; // Give normal playback metadata a chance before images.
+    }
+    // Keep recently viewed JPEGs; protect visible + directional lookahead IDs.
+    std::string needed[music_shelf::prefetchCount],download;
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    if(!shelf.items.empty()){
+        for(size_t i=0;i<music_shelf::prefetchCount;++i)
+            needed[i]=shelf.items[music_shelf::modulo(shelf.anchor+music_shelf::prefetchOffset(i,shelf.direction),int(shelf.items.size()))].id;
+        for(auto& id:needed){
+            auto* found=music_shelf::cacheSlot(shelf.art,id,needed);if(!found)continue;
+            if(found->id!=id){*found=ShelfArt{};found->id=id;}
+            found->used=millis();
+            if(download.empty()&&found->bytes.empty()&&int32_t(millis()-found->retryAt)>=0){download=id;found->retryAt=millis()+3000;}
+        }
+    }
+    xSemaphoreGive(stateLock);
+    if(download.empty())return;
+    std::vector<uint8_t> bytes;
+    if(get("/api/playlist-artwork/"+String(download.c_str()),bytes,40000)){
+        xSemaphoreTake(stateLock,portMAX_DELAY);
+        if(shelfOpen.load()&&shelf.epoch==epoch)for(auto& art:shelf.art)if(art.id==download){art.bytes=std::move(bytes);dirty=true;break;}
+        xSemaphoreGive(stateLock);
+    }
+}
 void worker(void*) {
     uint32_t refreshAt=0;
     music::SyncCadence sync;
@@ -176,27 +302,33 @@ void worker(void*) {
         Command cmd;
         if (xQueueReceive(queue,&cmd,0)==pdTRUE) {
             cJSON* j=cJSON_CreateObject();
-            cJSON_AddStringToObject(j,"action",music::name(cmd.action));
-            cJSON_AddStringToObject(j,"track_id",cmd.track);
+            if(cmd.playlist)cJSON_AddStringToObject(j,"id",cmd.track);
+            else {cJSON_AddStringToObject(j,"action",music::name(cmd.action));cJSON_AddStringToObject(j,"track_id",cmd.track);}
             cJSON_AddStringToObject(j,"request_id",cmd.request);
             char* json=cJSON_PrintUnformatted(j);
             std::vector<uint8_t> bytes;
             uint32_t actionAt=millis();const char* outcome="unconfirmed";
-            bool ok=json && get("/api/action",bytes,2048,String(json));
+            bool ok=json && get(cmd.playlist?"/api/playlists/play":"/api/action",bytes,2048,String(json));
             if(json)cJSON_free(json); cJSON_Delete(j);
             if(ok){
                 bytes.push_back(0); j=cJSON_Parse(reinterpret_cast<char*>(bytes.data()));
                 if(j){
                     if(flag(j,"ok")){
+                        if(cmd.playlist)shelfPlayed.store(cmd.shelfEpoch);
                         const char* badge=cmd.action==music::RepeatOne?"ONE SENT":cmd.action==music::RepeatAll?"ALL SENT":"";
                         message("",badge);outcome="accepted";
                     }
-                    else{bool uncertain=!strcmp(text(j,"code"),"uncertain");message(text(j,"error"),uncertain?"UNCONFIRMED":"CHECK MAC");outcome=uncertain?"unconfirmed":"rejected";}
+                    else{bool uncertain=!strcmp(text(j,"code"),"uncertain");message(cmd.playlist?text(j,"message"):text(j,"error"),uncertain?"UNCONFIRMED":"CHECK MAC");outcome=uncertain?"unconfirmed":"rejected";}
                     cJSON_Delete(j);
                 }
                 else message("返回无效，请检查 Mac");
             } else message("结果未知，请检查 Mac；未重试","UNCONFIRMED");
             Serial.printf("ACTION action=%s outcome=%s duration_ms=%lu\n",music::name(cmd.action),outcome,(unsigned long)(millis()-actionAt));
+            if(cmd.playlist&&strcmp(outcome,"accepted")){
+                auto failed=snapshot();xSemaphoreTake(stateLock,portMAX_DELAY);
+                if(shelf.epoch==cmd.shelfEpoch)shelf.error=failed.message;
+                xSemaphoreGive(stateLock);
+            }
             busy.store(false);dirty.store(true); refreshAt=0;
             sync.afterAction(millis());
         }
@@ -279,7 +411,146 @@ void worker(void*) {
                 if(j)cJSON_Delete(j);
             }
         }
+        shelfWork();
         vTaskDelay(pdMS_TO_TICKS(25));
+    }
+}
+void syncShelfSelection(){
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    if(shelfUiRevision==shelf.revision&&!shelf.items.empty()){
+        shelf.selected=music_shelf::modulo(music_shelf::nearest(shelfMotion.position),int(shelf.items.size()));
+        shelf.anchor=shelfMotion.anchor;
+        float travel=shelfMotion.target-shelfMotion.position;
+        if(fabsf(travel)>.001f||fabsf(shelfMotion.velocity)>.01f)shelf.direction=(fabsf(travel)>.001f?travel:shelfMotion.velocity)<0?-1:1;
+        shelf.selectedId=shelf.items[shelf.selected].id;
+    }
+    xSemaphoreGive(stateLock);
+}
+void advanceShelf(uint32_t now){
+    if(!shelfOpen.load())return;
+    xSemaphoreTake(stateLock,portMAX_DELAY);auto revision=shelf.revision;auto selected=shelf.selected;xSemaphoreGive(stateLock);
+    if(shelfUiRevision!=revision){
+        shelfUiRevision=revision;shelfGesture.cancel(shelfMotion,now);shelfMotion.reset(selected,now);dirty=true;
+    }
+    if(shelfMotion.tick(now))dirty=true;
+    static uint32_t spinAt=0;
+    xSemaphoreTake(stateLock,portMAX_DELAY);bool loading=shelf.loading;xSemaphoreGive(stateLock);
+    if(loading&&uint32_t(now-spinAt)>=80){spinAt=now;dirty=true;}
+    syncShelfSelection();
+}
+void openShelf(){
+    if(setupMode||busy.load())return;
+    if(!shelfEntryFirst){shelfEntryAt=micros();shelfEntryFirst=true;}
+    shelfEntryWarm=false;
+    // Allocation occurs once on entry, never in the per-frame rasterizer.
+    Serial.printf("SHELF_ENTER before_renderer stack_free=%u psram_free=%u\n",unsigned(uxTaskGetStackHighWaterMark(nullptr)),ESP.getFreePsram());
+    bool rendererOK=beginShelfRenderer();
+    Serial.printf("SHELF_ENTER renderer=%d stack_free=%u psram_free=%u\n",rendererOK,unsigned(uxTaskGetStackHighWaterMark(nullptr)),ESP.getFreePsram());
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    bool restore=music_shelf::canRestoreFrame(shelfReturnReady,shelfReturnEpoch,shelf.epoch,shelfReturnRevision,shelf.revision,shelfReturnSelected,shelf.selected);
+    ++shelf.epoch;if(!shelf.epoch)++shelf.epoch;
+    shelf.error.clear();shelf.fetch=shelf.items.empty();shelf.loading=shelf.fetch;shelf.pollAt=0;
+    shelfMotion.reset(shelf.selected,millis());shelf.anchor=shelfMotion.anchor;shelfUiRevision=shelf.revision;
+    shelfOpen=true;
+    xSemaphoreGive(stateLock);
+    shelfTouches.clear();shelfFingerDown=false;shelfGesture={};
+    if(restore&&rendererOK){
+        memcpy(canvas.getBuffer(),shelfDecor.getBuffer(),320*240*2);
+        canvas.pushSprite(0,0);shelfEntryWarm=true;logShelfVisible();
+    }else shelfDecorValid=false;
+    shelfReturnReady=false;dirty=true;
+}
+void closeShelf(bool afterPlay=false){
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    bool beforePlayMatches=shelfBeforePlay&&shelfBeforePlayEpoch==shelf.epoch&&shelfBeforePlayRevision==shelf.revision&&shelfBeforePlaySelected==shelf.selected;
+    bool shownMatches=shelfShownRevision==shelf.revision&&shelfShownSelected==shelf.selected;
+    auto capturedRevision=shelf.revision;auto capturedSelected=shelf.selected;
+    xSemaphoreGive(stateLock);
+    bool reusable=shelfOpen.load()&&shelfDecorValid&&(afterPlay?beforePlayMatches:(shelfNormalFrame&&shownMatches&&!busy.load()&&!shelfMotion.moving()&&!shelfGesture.active));
+    if(reusable)memcpy(shelfDecor.getBuffer(),afterPlay?shelfBeforePlay:canvas.getBuffer(),320*240*2);
+    releaseShelfPlaySnapshot();
+    shelfGesture.cancel(shelfMotion,millis());shelfMotion.reset(music_shelf::nearest(shelfMotion.position),millis());syncShelfSelection();
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    shelfOpen=false;++shelf.epoch;auto id=shelf.selectedId;
+    shelfReturnReady=reusable&&capturedRevision==shelf.revision&&capturedSelected==shelf.selected;shelfReturnRevision=shelf.revision;shelfReturnEpoch=shelf.epoch;shelfReturnSelected=shelf.selected;
+    xSemaphoreGive(stateLock);
+    shelfTouches.clear();shelfFingerDown=false;
+    if(!id.empty()&&shelfPrefs.getString("selected")!=id.c_str())shelfPrefs.putString("selected",id.c_str());
+    recordMoving=recordReveal!=recordTarget;recordStarted=millis();lyricMoving=false;dirty=true;lastFullDraw=0;
+}
+void returnShelfHome(){
+    closeShelf();
+#ifdef FACES_SUITE
+    suite::open(suite::App::Home);
+#endif
+}
+void moveShelf(int direction){
+    if(busy.load()||!shelfRendererReady)return;
+    xSemaphoreTake(stateLock,portMAX_DELAY);auto count=shelf.items.size();xSemaphoreGive(stateLock);
+    if(count<2)return;
+    shelfGesture.cancel(shelfMotion,millis());shelfMotion.move(direction,millis());dirty=true;
+}
+void refreshShelf(){
+    if(busy.load())return;
+    xSemaphoreTake(stateLock,portMAX_DELAY);bool loading=shelf.loading;xSemaphoreGive(stateLock);
+    if(loading)return;
+    shelfGesture.cancel(shelfMotion,millis());shelfMotion.reset(music_shelf::nearest(shelfMotion.position),millis());syncShelfSelection();
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    shelf.fetch=true;shelf.refresh=true;shelf.loading=true;shelf.pollAt=0;shelf.error.clear();
+    xSemaphoreGive(stateLock);dirty=true;
+}
+void playShelf(){
+    if(!shelfRendererReady||shelfMotion.moving()||shelfGesture.active)return;
+    if(WiFi.status()!=WL_CONNECTED){xSemaphoreTake(stateLock,portMAX_DELAY);shelf.error="等待 Wi-Fi 连接";xSemaphoreGive(stateLock);dirty=true;return;}
+    if(busy.exchange(true))return;
+    Command cmd{};cmd.playlist=true;
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    if(shelfUiRevision!=shelf.revision||shelf.items.empty()||shelf.loading||shelf.stale||!shelf.error.empty()){xSemaphoreGive(stateLock);busy=false;dirty=true;return;}
+    strlcpy(cmd.track,shelf.items[shelf.selected].id.c_str(),sizeof(cmd.track));cmd.shelfEpoch=shelf.epoch;
+    bool canSave=shelfNormalFrame&&shelfShownRevision==shelf.revision&&shelfShownSelected==shelf.selected;
+    shelfBeforePlayEpoch=shelf.epoch;shelfBeforePlayRevision=shelf.revision;shelfBeforePlaySelected=shelf.selected;
+    xSemaphoreGive(stateLock);
+    releaseShelfPlaySnapshot();
+    if(canSave){
+        shelfBeforePlay=static_cast<uint16_t*>(heap_caps_malloc(320*240*2,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+        if(shelfBeforePlay)memcpy(shelfBeforePlay,canvas.getBuffer(),320*240*2);
+    }
+    snprintf(cmd.request,sizeof(cmd.request),"%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());
+    if(xQueueSend(queue,&cmd,0)!=pdTRUE){busy=false;releaseShelfPlaySnapshot();}
+    dirty=true;
+}
+void shelfTap(int x,int y){
+    auto hit=music_shelf::touch(x,y);
+    if(hit==music_shelf::Back){returnShelfHome();return;}
+    if(hit==music_shelf::Refresh){refreshShelf();return;}
+    if(shelfMotion.moving()||busy.load())return;
+    xSemaphoreTake(stateLock,portMAX_DELAY);auto count=shelf.items.size();xSemaphoreGive(stateLock);
+    if(!count){if(x>=105&&x<215&&y>=151&&y<180)refreshShelf();return;}
+    if(hit==music_shelf::Previous){moveShelf(-1);return;}
+    if(hit==music_shelf::Next){moveShelf(1);return;}
+    if(hit==music_shelf::Play){playShelf();return;}
+    // Test the visible projected cover, front to back; blank gaps never play.
+    for(int offset: {0,-1,1}){
+        if(count==1&&offset)continue;
+        auto geometry=music_shelf::geometry(offset+shelfMotion.anchor-shelfMotion.position);
+        if(music_shelf::contains(geometry,float(x),float(y))){if(!offset)playShelf();else moveShelf(offset);return;}
+    }
+}
+void handleShelfTouches(){
+    music_shelf::TouchEvent e;
+    while(shelfTouches.pop(e)){
+        if(!shelfOpen.load())continue;
+        if(e.phase==music_shelf::TouchEvent::Down){
+            xSemaphoreTake(stateLock,portMAX_DELAY);bool allowed=shelf.items.size()>1&&!shelf.loading;xSemaphoreGive(stateLock);
+            bool flow=allowed&&shelfRendererReady&&!busy.load()&&e.y>=40&&e.y<175;
+            shelfGesture.begin(e.x,e.y,e.at,flow,shelfMotion);dirty=true;
+        }else if(e.phase==music_shelf::TouchEvent::Move){
+            shelfGesture.update(e.x,e.y,e.at,shelfMotion);if(shelfGesture.moved)dirty=true;
+        }else{
+            int x=shelfGesture.startX,y=shelfGesture.startY;
+            bool tap=shelfGesture.finish(e.x,e.y,e.at,shelfMotion,e.phase==music_shelf::TouchEvent::Cancel);
+            syncShelfSelection();dirty=true;if(tap)shelfTap(x,y);
+        }
     }
 }
 void submit(music::Action action) {
@@ -326,7 +597,7 @@ void line(int x,int y,const char* s,uint16_t color=ink) {
             float x0=px/scale,x1=(px+1)/scale,y0=py/scale,y1=(py+1)/scale,coverage=0;
             for(int sy=int(y0);sy<int(ceilf(y1));++sy)for(int sx=int(x0);sx<int(ceilf(x1));++sx){
                 float weight=(fminf(x1,sx+1.f)-fmaxf(x0,float(sx)))*(fminf(y1,sy+1.f)-fmaxf(y0,float(sy)));
-                coverage+=(textMask.readPixel(sx,sy)&31)/31.f*weight;
+                coverage+=(music_shelf::swap16(static_cast<const uint16_t*>(textMask.getBuffer())[sy*768+sx])&31)/31.f*weight;
             }
             raster->alpha[py*width+px]=coverage*scale*scale;
         }
@@ -369,13 +640,14 @@ void paperIcon(const uint8_t* mask,int x,int y,uint32_t color,int size=13){
         if(mask[yy*size+xx])blendPixel(canvas,x+xx,y+yy,color,mask[yy*size+xx]/255.f);
 }
 struct LabelInkBounds {int left=0,top=0,right=0,bottom=0;};
-LabelInkBounds buttonLabelBounds(const char* text){
+LabelInkBounds buttonLabelBounds(const char* text,const lgfx::IFont* font=music_fonts::tiny()){
     // Cache by caller: measure visible glyph alpha, not font advance/ascender.
-    textMask.fillSprite(0);textMask.setFont(music_fonts::tiny());textMask.setTextSize(1);
+    textMask.fillSprite(0);textMask.setFont(font);textMask.setTextSize(1);
     textMask.setTextColor(0xffff);textMask.setCursor(0,0);textMask.print(text);
     LabelInkBounds bounds{768,32,0,0};
     int width=std::min(768,int(textMask.textWidth(text))),height=std::min(32,int(textMask.fontHeight()));
-    for(int y=0;y<height;++y)for(int x=0;x<width;++x)if((textMask.readPixel(x,y)&31)>2){
+    auto* raw=static_cast<const uint16_t*>(textMask.getBuffer());
+    for(int y=0;y<height;++y)for(int x=0;x<width;++x)if((music_shelf::swap16(raw[y*768+x])&31)>2){
         bounds.left=std::min(bounds.left,x);bounds.top=std::min(bounds.top,y);
         bounds.right=std::max(bounds.right,x+1);bounds.bottom=std::max(bounds.bottom,y+1);
     }
@@ -385,6 +657,14 @@ LabelInkBounds buttonLabelBounds(const char* text){
 void paperText(int x,int y,const char* value,float size,uint16_t color=ink,bool bold=false){
     canvas.setFont(bold?music_fonts::large():music_fonts::small());
     canvas.setTextSize(size/(bold?16.f:12.f));line(x,y,value,color);canvas.setTextSize(1);
+}
+void drawContentPill(int x,int y,const uint8_t* icon,const char* label,uint32_t foreground,int index){
+    bool pressed=contentPressed==index&&int32_t(millis()-contentPressedUntil)<0;
+    int top=y+(pressed?1:0);
+    paperPanel(x,top,music_content::width,music_content::height,10,pressed?0xeadbc3:music_paper::paper,pressed?1.f:.55f,1);
+    canvas.setFont(music_fonts::small());canvas.setTextSize(9.f/12);int textWidth=measureText(label);canvas.setTextSize(1);
+    int left=x+(music_content::width-13-4-textWidth)/2;
+    paperIcon(icon,left,top+3,foreground,13);paperText(left+17,top+3,label,9,music_colors::rgb565(foreground));
 }
 void cacheScene(){
     uint32_t version;std::vector<uint8_t> bytes;
@@ -511,8 +791,225 @@ void drawLyric(const State& s,bool stale){
     }
     canvas.clearClipRect();canvas.setTextSize(1);
 }
-void draw(bool motionOnly=false) {
-    if(!faces_screen::appVisible())return;
+bool beginShelfRenderer(){
+    if(shelfRendererReady)return true;
+    for(auto& cache:shelfPixels)if(!cache.pixels)cache.pixels=static_cast<uint16_t*>(heap_caps_malloc(160*160*2,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+    auto sprite=[](M5Canvas& target,int w,int h){target.setPsram(true);target.setColorDepth(16);return target.createSprite(w,h)!=nullptr;};
+    bool ok=sprite(shelfBackdrop,320,240)&&sprite(shelfDecor,320,240)&&sprite(shelfDecoder,160,160);
+    for(const auto& cache:shelfPixels)ok=ok&&cache.pixels;
+    if(!ok){
+        for(auto& cache:shelfPixels){if(cache.pixels)heap_caps_free(cache.pixels);cache=ShelfPixels{};}
+        shelfBackdrop.deleteSprite();shelfDecor.deleteSprite();shelfDecoder.deleteSprite();
+        if(Serial.availableForWrite()>80)Serial.println("SHELF renderer unavailable: PSRAM allocation failed");
+        return false;
+    }
+    // LGFX's 16-bit sprite storage is byte-swapped on this target; verify instead of assuming.
+    shelfDecoder.drawPixel(0,0,0xf800);shelfRawSwapped=static_cast<uint16_t*>(shelfDecoder.getBuffer())[0]!=0xf800;
+    canvas.clearClipRect();canvas.fillSprite(bg);
+    for(int x=0;x<320;x+=6)for(int y=0;y<240;++y)blendPixel(canvas,x,y,0x111000,.02f);
+    // Halo is flattened into the background before any card/shadow is composited.
+    for(int y=33;y<173;++y){pollInput();for(int x=90;x<230;++x){float dx=x+.5f-160,dy=y+.5f-103;
+        float coverage=std::max(0.f,std::min(1.f,70.5f-std::sqrt(dx*dx+dy*dy)));
+        if(coverage>0)blendPixel(canvas,x,y,0xffd21f,.32f*coverage);
+    }}
+    paperPanel(7,5,29,29,14.5f,music_paper::paper,0,1.5f);paperIcon(music_icons::back,13,11,music_paper::ink,17);
+    auto alphaMask=[](int x,int y,int width,int height,const uint8_t* data){
+        for(int row=0;row<height;++row){pollInput();for(int col=0;col<width;++col)if(auto a=data[row*width+col])blendPixel(canvas,x+col,y+row,music_paper::ink,a/255.f);}
+    };
+    alphaMask(43,6,music_shelf_assets::collectionWidth,music_shelf_assets::collectionHeight,music_shelf_assets::collection);
+    alphaMask(44,25,music_shelf_assets::subtitleWidth,music_shelf_assets::subtitleHeight,music_shelf_assets::subtitle);
+    canvas.fillRect(7,38,306,2,ink);
+    memcpy(shelfBackdrop.getBuffer(),canvas.getBuffer(),320*240*2);
+    shelfRendererReady=true;shelfDecorValid=false;shelfPerf.at=millis();
+    Serial.printf("SHELF renderer ready cache_bytes=%u psram_free=%u\n",unsigned(music_shelf::decodedCapacity*160*160*2+2*320*240*2+160*160*2),ESP.getFreePsram());
+    return true;
+}
+struct ShelfTitlePixels {std::string id;uint16_t* pixels=nullptr;uint32_t used=0;};
+ShelfTitlePixels shelfTitles[9];
+void paintShelfTitle(const std::string& caption,bool sending){
+    memcpy(static_cast<uint16_t*>(canvas.getBuffer())+175*320,static_cast<uint16_t*>(shelfBackdrop.getBuffer())+175*320,39*320*2);
+            canvas.fillRect(13,178,6,34,music_colors::rgb565(0xffd21f));canvas.setClipRect(28,177,279,37);
+            canvas.setFont(music_fonts::large());canvas.setTextSize(15.f/16);
+            struct TitleLayout{std::string caption;std::vector<std::string> lines;LabelInkBounds bounds[2];int origin=178;};
+            static TitleLayout layouts[12];static unsigned nextLayout=0;TitleLayout* layout=nullptr;
+            for(auto& cached:layouts)if(cached.caption==caption&&!cached.lines.empty()){layout=&cached;break;}
+            if(!layout){layout=&layouts[nextLayout++%12];layout->caption=caption;
+                layout->lines=music::titleLines(caption,279,[](const char* t){return measureText(t);});
+                float inkTop=1000,inkBottom=-1000;
+                for(size_t i=0;i<layout->lines.size();++i){layout->bounds[i]=buttonLabelBounds(layout->lines[i].c_str(),music_fonts::large());
+                    inkTop=std::min(inkTop,float(i*18)+layout->bounds[i].top*15.f/16);inkBottom=std::max(inkBottom,float(i*18)+layout->bounds[i].bottom*15.f/16);}
+                layout->origin=int(lroundf(195-(inkTop+inkBottom)/2));}
+            for(size_t i=0;i<layout->lines.size();++i)line(28-int(layout->bounds[i].left*15.f/16),layout->origin+int(i)*18,layout->lines[i].c_str(),sending?dim:ink);
+            canvas.clearClipRect();canvas.setTextSize(1);
+}
+bool shelfTitleCached(const std::string& caption){for(auto& c:shelfTitles)if(c.id==caption&&c.pixels)return true;return false;}
+void drawCachedShelfTitle(const std::string& caption,bool sending,const std::string (&protectedTitles)[9]){
+    std::string id=caption+(sending?"\1":"");
+    for(auto& c:shelfTitles)if(c.id==id&&c.pixels){c.used=millis();memcpy(static_cast<uint16_t*>(canvas.getBuffer())+175*320,c.pixels,39*320*2);return;}
+    paintShelfTitle(caption,sending);
+    auto* cache=music_shelf::cacheSlot(shelfTitles,id,protectedTitles);if(!cache)return;
+    if(!cache->pixels)cache->pixels=static_cast<uint16_t*>(heap_caps_malloc(39*320*2,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+    if(!cache->pixels){static bool reported=false;if(!reported){Serial.println("SHELF title cache unavailable");reported=true;}return;}
+    cache->id=id;cache->used=millis();memcpy(cache->pixels,static_cast<uint16_t*>(canvas.getBuffer())+175*320,39*320*2);
+}
+void drawShelf(){
+    uint32_t frameStarted=micros();
+    if(!shelfRendererReady){
+        canvas.fillSprite(bg);paperText(28,65,"唱片架内存不足",16,ink,true);
+        paperText(28,103,"按 Q 返回，再按 P 重试",12,ink);canvas.pushSprite(0,0);return;
+    }
+    struct Visible{std::string id;music_shelf::Geometry geometry;ShelfPixels* cache=nullptr;};
+    Visible visible[5];std::string wanted[music_shelf::prefetchCount],wantedTitles[music_shelf::prefetchCount];size_t count,index;bool loading,truncated,stale;std::string error,title;faces_power::State power;
+    uint32_t epoch,revision;int anchor=shelfMotion.anchor;float position=shelfMotion.position;
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    count=shelf.items.size();index=shelf.selected;loading=shelf.loading;error=shelf.error;truncated=shelf.truncated;stale=shelf.stale;power=musicPower;epoch=shelf.epoch;revision=shelf.revision;
+    if(count){title=shelf.items[index].title;
+        for(size_t i=0;i<music_shelf::prefetchCount;++i){const auto& item=shelf.items[music_shelf::modulo(anchor+music_shelf::prefetchOffset(i,shelf.direction),int(count))];wanted[i]=item.id;wantedTitles[i]=item.title;}
+        for(int i=0;i<5;++i)if(count>1||i==2)visible[i].id=shelf.items[music_shelf::modulo(anchor+i-2,int(count))].id;
+    }
+    xSemaphoreGive(stateLock);
+    // A list refresh may complete between input processing and composition. Wait for the UI's
+    // revision reset rather than combining a previous fractional position with a new library.
+    if(revision!=shelfUiRevision){dirty=true;return;}
+    // Reserve desired entries before drawing; old non-neighbours remain available for reversal.
+    for(const auto& id:wanted){
+        if(id.empty())continue;auto* cache=music_shelf::cacheSlot(shelfPixels,id,wanted);if(!cache)continue;
+        if(cache->id!=id){cache->id=id;cache->ready=cache->attempted=false;}
+        cache->used=millis();
+    }
+    for(int i=0;i<5;++i){
+        auto& card=visible[i];card.geometry=music_shelf::geometry(i-2+anchor-position);if(card.id.empty())continue;
+        for(auto& cache:shelfPixels)if(cache.id==card.id){card.cache=&cache;break;}
+    }
+    // One decode per frame, centre then visible then directional lookahead. Same ID is
+    // still protected in both caches; background responses cannot replace its pixels.
+    for(const auto& id:wanted){
+        if(shelfEntryFirst)break; // Visible loading/cache frame precedes optional JPEG decoding.
+        if(id.empty())continue;ShelfPixels* cache=nullptr;
+        for(auto& c:shelfPixels)if(c.id==id){cache=&c;break;}
+        if(!cache||cache->attempted)continue;
+        std::vector<uint8_t> bytes;
+        xSemaphoreTake(stateLock,portMAX_DELAY);
+        if(shelf.epoch==epoch&&shelf.revision==revision)for(auto& art:shelf.art)if(art.id==id){bytes=art.bytes;break;}
+        xSemaphoreGive(stateLock);if(bytes.empty())continue;
+        pollInput();uint32_t at=micros();shelfDecoder.fillSprite(bg);
+        bool decoded=shelfDecoder.drawJpg(bytes.data(),bytes.size(),0,0,160,160);
+        if(decoded)memcpy(cache->pixels,shelfDecoder.getBuffer(),160*160*2);
+        cache->attempted=true;cache->ready=decoded;
+        uint32_t cost=micros()-at;++shelfDecodeCount;shelfDecodeUs+=cost;shelfDecodeMaxUs=std::max(shelfDecodeMaxUs,cost);
+        pollInput();dirty=true;break;
+    }
+    bool moving=shelfMotion.moving(),sending=busy.load();
+    char countLabel[28];snprintf(countLabel,sizeof(countLabel),"%u / %u%s",unsigned(count?index+1:0),unsigned(count),truncated?"+":"");
+    std::string caption=sending?"正在请求播放…":!error.empty()&&!loading?error:title;
+    if(stale&&error.empty())caption="收藏已过期，按 R 刷新";
+    if(WiFi.status()!=WL_CONNECTED)caption="等待 Wi-Fi 连接";
+    int pressedFooter=-1;
+    if(shelfGesture.active&&!shelfGesture.cancelled&&shelfGesture.startY>=214&&shelfGesture.startY<239)
+        for(int i=0;i<4;++i)if(shelfGesture.startX>=music_shelf::footerX[i]&&shelfGesture.startX<music_shelf::footerX[i]+music_shelf::footerW[i])pressedFooter=i;
+    std::string key=std::string(countLabel)+"|"+caption+"|"+std::to_string(power.percent)+"|"+std::to_string(int(faces_power::tint(power)))+
+        "|"+std::to_string(power.valid)+std::to_string(power.present)+std::to_string(loading)+std::to_string(moving)+std::to_string(sending)+std::to_string(count==0)+"|"+std::to_string(pressedFooter);
+    uint32_t decorAt=micros();
+    static std::string previousHeader,previousTitle,previousFooter;
+    std::string headerKey=std::string(countLabel)+"|"+std::to_string(power.percent)+"|"+std::to_string(int(faces_power::tint(power)))+std::to_string(power.valid)+std::to_string(power.present);
+    std::string titleKey=caption+"|"+std::to_string(sending)+std::to_string(count==0)+std::to_string(loading);
+    std::string footerKey=std::to_string(loading)+std::to_string(moving)+std::to_string(sending)+std::to_string(count<2)+std::to_string(stale)+std::to_string(!error.empty())+std::to_string(pressedFooter);
+    bool headerChanged=!shelfDecorValid||headerKey!=previousHeader;
+    bool titleChanged=!shelfDecorValid||titleKey!=previousTitle;
+    bool footerChanged=!shelfDecorValid||footerKey!=previousFooter;
+    if(!shelfDecorValid||key!=shelfDecorKey){
+        auto restoreRows=[](int y,int h){memcpy(static_cast<uint16_t*>(canvas.getBuffer())+y*320,static_cast<uint16_t*>(shelfBackdrop.getBuffer())+y*320,h*320*2);};
+        if(headerChanged){
+        restoreRows(0,40);
+        canvas.setFont(music_fonts::small());canvas.setTextSize(1);
+        int batteryLeft=faces_power::drawBattery(canvas,power,312,13,true);
+        if(count){canvas.setFont(music_fonts::small());canvas.setTextSize(7.f/12);int countWidth=measureText(countLabel)+10;canvas.setTextSize(1);
+            int right=batteryLeft-4;
+            paperPanel(right-countWidth,13,countWidth,14,7,0xffd21f,1,0);paperText(right-countWidth+5,14,countLabel,7,ink);}
+        }
+        if(titleChanged){
+        // Empty/loading messages also occupy the flow region; clear their old ink.
+        restoreRows(count?175:40,count?39:174);
+        if(count){
+            drawCachedShelfTitle(caption,sending,wantedTitles);
+        }else{
+            paperText(78,82,loading?"正在读取收藏":error.empty()?"暂无收藏歌单":"读取收藏失败",14,ink,true);
+            canvas.setClipRect(24,108,272,36);paperText(24,111,error.empty()?"在网易云收藏后，按 R 刷新":error.c_str(),11,dim);canvas.clearClipRect();
+            if(!loading){paperPanel(105,151,110,29,5,0xfaefdd,1,1.5f);paperText(126,158,"R 重新读取",11,ink);}
+        }
+        }
+        if(footerChanged){
+        restoreRows(214,26);
+        bool disabled[]={sending||loading,sending||moving||count<2,sending||moving||loading||stale||!error.empty()||!count,sending||moving||count<2};
+        const uint8_t* icons[]={music_shelf_assets::refresh,music_icons::previous,music_icons::play,music_icons::next};
+        const char* labels[]={"R","J","SPC","K"};
+        for(int i=0;i<4;++i){
+            int x=music_shelf::footerX[i],w=music_shelf::footerW[i],top=214+(pressedFooter==i&&!disabled[i]?1:0);
+            paperPanel(x,top,w,25,8,i==2?0xffd21f:0xfaefdd,1,1.5f);
+            int labelWidth=i==2?17:6,left=x+(w-(13+5+labelWidth))/2;
+            paperIcon(icons[i],left,top+6,music_paper::ink,13);paperText(left+18,top+6,labels[i],8,ink);
+            if(disabled[i])for(int y=top+2;y<std::min(240,top+23);++y)for(int px=x+2;px<x+w-2;++px)blendPixel(canvas,px,y,music_paper::paper,.45f);
+        }
+        }
+        previousHeader=std::move(headerKey);previousTitle=std::move(titleKey);previousFooter=std::move(footerKey);
+        auto saveRows=[](int y,int h){memcpy(static_cast<uint16_t*>(shelfDecor.getBuffer())+y*320,static_cast<uint16_t*>(canvas.getBuffer())+y*320,h*320*2);};
+        if(headerChanged)saveRows(0,40);if(titleChanged)saveRows(count?175:40,count?39:174);if(footerChanged)saveRows(214,26);
+        shelfDecorKey=std::move(key);shelfDecorValid=true;
+    }
+    if(loading){
+        memcpy(static_cast<uint16_t*>(canvas.getBuffer())+214*320,static_cast<uint16_t*>(shelfDecor.getBuffer())+214*320,26*320*2);
+        // Rotate only the same 13px ArrowClockwise mask; R remains visible and stationary.
+        int left=music_shelf::footerX[0]+(music_shelf::footerW[0]-24)/2,top=220;
+        canvas.fillRect(left-3,top-3,19,19,music_colors::rgb565(0xfaefdd));
+        float angle=(millis()%800)*6.28318530718f/800,cs=cosf(angle),sn=sinf(angle);
+        for(int yy=-3;yy<16;++yy)for(int xx=-3;xx<16;++xx){
+            float dx=xx-6.f,dy=yy-6.f,sx=cs*dx+sn*dy+6.f,sy=-sn*dx+cs*dy+6.f;
+            int ix=int(lroundf(sx)),iy=int(lroundf(sy));
+            if(ix>=0&&ix<13&&iy>=0&&iy<13)blendPixel(canvas,left+xx,top+yy,music_paper::ink,music_shelf_assets::refresh[iy*13+ix]/255.f);
+            blendPixel(canvas,left+xx,top+yy,music_paper::paper,.45f);
+        }
+    }
+    shelfPerf.decor+=micros()-decorAt;
+    static std::string lastFlow;std::string flowKey=std::to_string(position);
+    for(const auto& card:visible)flowKey+="|"+card.id+std::to_string(card.cache&&card.cache->ready);
+    bool flowChanged=flowKey!=lastFlow||titleChanged||headerChanged;
+    uint32_t rasterAt=micros();
+    if(count&&flowChanged){
+        memcpy(static_cast<uint16_t*>(canvas.getBuffer())+40*320,static_cast<uint16_t*>(shelfBackdrop.getBuffer())+40*320,135*320*2);
+        std::sort(std::begin(visible),std::end(visible),[](const Visible& a,const Visible& b){return fabsf(a.geometry.offset)>fabsf(b.geometry.offset);});
+        for(const auto& card:visible)if(!card.id.empty())music_shelf::rasterCard(static_cast<uint16_t*>(canvas.getBuffer()),320,240,
+            card.cache&&card.cache->ready?card.cache->pixels:nullptr,160,card.geometry,shelfRawSwapped,[]{uint32_t at=micros();pollInput();shelfPerf.pump+=micros()-at;});
+    }
+    lastFlow=std::move(flowKey);
+    uint32_t rasterCost=micros()-rasterAt;pollInput();uint32_t pushAt=micros();
+    auto pushRows=[](int y,int h){M5.Display.setClipRect(0,y,320,h);canvas.pushSprite(0,0);M5.Display.clearClipRect();pollInput();};
+    if(headerChanged)pushRows(0,40);
+    if(flowChanged)pushRows(40,135);
+    if(titleChanged)pushRows(175,39);
+    if(footerChanged||loading)pushRows(214,26);
+    uint32_t pushCost=micros()-pushAt;
+    shelfNormalFrame=!moving&&!sending&&!loading&&error.empty();shelfShownRevision=revision;shelfShownSelected=index;
+    bool entering=shelfEntryFirst;logShelfVisible();
+    // Gradually warm neighbours while stationary. A new touch stops further warming;
+    // current on-screen title pixels are restored from the real decor strip afterwards.
+    if(!entering&&count&&!moving&&!sending&&!loading&&!shelfFingerDown){
+        for(const auto& next:wantedTitles)if(!next.empty()&&!shelfTitleCached(next)){
+            drawCachedShelfTitle(next,false,wantedTitles);
+            memcpy(static_cast<uint16_t*>(canvas.getBuffer())+175*320,static_cast<uint16_t*>(shelfDecor.getBuffer())+175*320,39*320*2);
+            dirty=true;break;
+        }
+    }
+    uint32_t total=micros()-frameStarted;++shelfPerf.frames;shelfPerf.total+=total;shelfPerf.max=std::max(shelfPerf.max,total);shelfPerf.raster+=rasterCost;shelfPerf.push+=pushCost;if(total>33000)++shelfPerf.overBudget;
+    if(millis()-shelfPerf.at>=5000&&Serial.availableForWrite()>=220){
+        Serial.printf("SHELF_PERF frames=%lu frame_avg_us=%lu max_us=%lu raster_avg_us=%lu push_avg_us=%lu decor_avg_us=%lu pump_avg_us=%lu update_total_us=%lu keyboard_total_us=%lu input_polls=%lu over_33ms=%lu decodes=%lu decode_total_us=%lu decode_max_us=%lu\n",
+            (unsigned long)shelfPerf.frames,(unsigned long)(shelfPerf.total/shelfPerf.frames),(unsigned long)shelfPerf.max,(unsigned long)(shelfPerf.raster/shelfPerf.frames),
+            (unsigned long)(shelfPerf.push/shelfPerf.frames),(unsigned long)(shelfPerf.decor/shelfPerf.frames),(unsigned long)(shelfPerf.pump/shelfPerf.frames),(unsigned long)shelfUpdateUs,(unsigned long)shelfKeyboardUs,(unsigned long)shelfInputPolls,(unsigned long)shelfPerf.overBudget,(unsigned long)shelfDecodeCount,(unsigned long)shelfDecodeUs,(unsigned long)shelfDecodeMaxUs);
+        shelfPerf={};shelfPerf.at=millis();shelfUpdateUs=shelfKeyboardUs=shelfInputPolls=0;shelfDecodeCount=shelfDecodeUs=shelfDecodeMaxUs=0;
+    }
+}
+// Keep the large Now Playing State snapshot off the Collection call stack.
+// noinline is intentional: the installed build reserved 4576 bytes even for its shelf branch.
+__attribute__((noinline)) void drawNowPlaying(bool motionOnly) {
     uint32_t frameAt=millis();bool wasMoving=recordMoving;
     auto finishMotion=[&](){
         if(wasMoving||recordMoving){uint32_t cost=millis()-frameAt;++motionFrames;motionTotalMs+=cost;motionMaxMs=std::max(motionMaxMs,cost);}
@@ -592,9 +1089,8 @@ void draw(bool motionOnly=false) {
         int artistY=metaY+int(title.size())*titleLine+artistGap;
         paperText(metaX,artistY-2,s.artist,11,dim);
         heartTop=artistY+artistHeight+5;
-        paperPanel(metaX,heartTop,54,20,10,music_paper::paper,.55f,1);
-        paperIcon(s.favorite==1?music_icons::heart:music_icons::heartOutline,metaX+6,heartTop+3,s.favorite==1?0xef263f:music_paper::ink);
-        paperText(metaX+23,heartTop+3,"喜欢",9,s.favorite==1?music_colors::rgb565(0xef263f):ink);
+        drawContentPill(music_content::likeX,heartTop,s.favorite==1?music_icons::heart:music_icons::heartOutline,"喜欢",s.favorite==1?0xef263f:music_paper::ink,0);
+        drawContentPill(music_content::collectionX,heartTop,music_shelf_assets::collectionEntry,"P",music_paper::ink,1);
         lyricTop=145;
         canvas.clearClipRect();drawLyric(s,stale);
         float elapsed=playhead(s,stale);char timing[32];
@@ -638,6 +1134,38 @@ void draw(bool motionOnly=false) {
 #endif
     canvas.pushSprite(0,0);finishMotion();
 }
+void draw(bool motionOnly=false){
+    if(!faces_screen::appVisible())return;
+    if(shelfOpen.load()){
+        if(dirty.exchange(false)){
+            static bool first=true;
+            if(first)Serial.printf("SHELF_FRAME begin stack_free=%u\n",unsigned(uxTaskGetStackHighWaterMark(nullptr)));
+            drawShelf();
+            if(first){Serial.printf("SHELF_FRAME complete stack_free=%u\n",unsigned(uxTaskGetStackHighWaterMark(nullptr)));first=false;}
+        }
+        return;
+    }
+    drawNowPlaying(motionOnly);
+}
+void enterShelf(bool touch=false){
+    if(setupMode||shelfOpen.load())return;
+    if(busy.load()){
+        message("正在发送，请稍候","SENDING");contentPressed=1;contentPressedUntil=millis()+200;
+        drawContentPill(music_content::collectionX,heartTop,music_shelf_assets::collectionEntry,"…",music_paper::ink,1);
+        M5.Display.setClipRect(music_content::collectionX-1,heartTop-1,music_content::width+2,music_content::height+3);
+        canvas.pushSprite(0,0);M5.Display.clearClipRect();return;
+    }
+    shelfEntryAt=micros();shelfEntryFirst=true;
+    shelfIgnoreEntryTouch=touch;
+    if(touch&&!shelfReturnReady){
+        contentPressed=1;contentPressedUntil=millis()+120;
+        drawContentPill(music_content::collectionX,heartTop,music_shelf_assets::collectionEntry,"P",music_paper::ink,1);
+        M5.Display.setClipRect(music_content::collectionX-1,heartTop-1,music_content::width+2,music_content::height+3);
+        canvas.pushSprite(0,0);M5.Display.clearClipRect();
+        Serial.printf("SHELF_OPEN feedback_us=%lu\n",(unsigned long)(micros()-shelfEntryAt));
+    }
+    contentPressed=-1;openShelf();
+}
 bool connectKeyboard(){
     if(keyboard.begin(&M5.In_I2C,M5FACES_BOTTOM3_ADDR,100000)!=M5FACES_OK)return false;
     m5faces_mode_t mode;
@@ -665,12 +1193,18 @@ void startPortal(){
 #endif
 }
 }
+#ifdef FACES_SUITE
+void setup(bool startInCollection){
+#else
 void setup(){
+    constexpr bool startInCollection=false;
+#endif
     Serial.begin(115200);
     auto cfg=M5.config();cfg.fallback_board=m5::board_t::board_M5StackCoreS3;
     cfg.internal_spk=false;cfg.internal_mic=false;cfg.internal_imu=false;
     M5.begin(cfg); // Speaker, microphone and camera stay disabled.
     connectionStarted=millis();
+    shelfPrefs.begin("faces-shelf",false);shelf.selectedId=shelfPrefs.getString("selected").c_str();
     stateLock=xSemaphoreCreateMutex();queue=xQueueCreate(1,sizeof(Command));
     if(!stateLock||!queue){M5.Display.print("Memory error");while(true)delay(1000);}
 #ifdef FACES_SUITE
@@ -706,7 +1240,9 @@ void setup(){
 #ifndef FACES_SUITE
     if(host.isEmpty()||token.isEmpty()||ssid.isEmpty())startPortal();
 #endif
-    Serial.println("BOOT faces-music paper-v1 / speaker disabled / LED GPIO5 off until L");draw();inputPumpReady=true;
+    Serial.println("BOOT faces-music paper-v1 / speaker disabled / LED GPIO5 off until L");
+    if(startInCollection)openShelf();
+    draw();inputPumpReady=true;
 }
 void loop(){
     // USB-only frame diagnostic: inspect the actual composed LCD buffer.
@@ -717,6 +1253,19 @@ void loop(){
 #ifdef FACES_SUITE
             if(diagnostic=="HOME OPEN")suite::open(suite::App::Home);
 #endif
+            if(diagnostic=="SHELF OPEN")enterShelf();
+            if(diagnostic=="MUSIC VIEW"&&shelfOpen.load()){closeShelf();draw();}
+            if(diagnostic=="SHELF NEXT"&&shelfOpen.load())moveShelf(1);
+            if(diagnostic=="SHELF PREVIOUS"&&shelfOpen.load())moveShelf(-1);
+            if(diagnostic=="SHELF STATUS"){
+                unsigned ready=0,visibleReady=0,visibleTotal=0;for(const auto& cache:shelfPixels)ready+=cache.ready;
+                xSemaphoreTake(stateLock,portMAX_DELAY);
+                for(int i=-2;i<=2&&!shelf.items.empty();++i){if(shelf.items.size()==1&&i!=0)continue;++visibleTotal;auto id=shelf.items[music_shelf::modulo(shelf.anchor+i,int(shelf.items.size()))].id;
+                    for(const auto& cache:shelfPixels)if(cache.id==id&&cache.ready){++visibleReady;break;}}
+                xSemaphoreGive(stateLock);
+                xSemaphoreTake(stateLock,portMAX_DELAY);auto id=shelf.selectedId;auto index=shelf.selected;auto count=shelf.items.size();xSemaphoreGive(stateLock);
+                Serial.printf("SHELF_STATUS id=%s index=%u count=%u decoded=%u visible_ready=%u visible_total=%u stack_free=%u\n",id.c_str(),unsigned(index),unsigned(count),ready,visibleReady,visibleTotal,unsigned(uxTaskGetStackHighWaterMark(nullptr)));
+            }
             if(diagnostic=="MUSIC FRAME"&&faces_screen::appVisible()){
                 draw();Serial.println("FACES_FRAME 320 240 RGB888");
                 static lgfx::bgr888_t row[320];static uint8_t rgb[320*3];
@@ -727,6 +1276,7 @@ void loop(){
         }else if(c!='\r'){if(diagnostic.length()<32)diagnostic+=c;else diagnostic="invalid";}
     }
     pollInput();auto now=millis();
+    if(contentPressed>=0&&int32_t(now-contentPressedUntil)>=0){contentPressed=-1;dirty=true;}
     if(powerReadAt==0||now-powerReadAt>=1000){
         powerReadAt=now;auto power=faces_power::read();
         xSemaphoreTake(stateLock,portMAX_DELAY);musicPower=power;xSemaphoreGive(stateLock);
@@ -741,8 +1291,33 @@ void loop(){
         ESP.restart();
 #endif
     }
+    auto playedEpoch=shelfPlayed.exchange(0);
+    if(playedEpoch){
+        xSemaphoreTake(stateLock,portMAX_DELAY);bool close=shelfOpen.load()&&shelf.epoch==playedEpoch;xSemaphoreGive(stateLock);
+        if(close){closeShelf(true);message("已请求播放歌单","PLAY SENT");}
+    }
+    if(shelfBeforePlay&&!busy.load()&&!shelfPlayed.load())releaseShelfPlaySnapshot();
+    handleShelfTouches();advanceShelf(millis());
     InputEventQueue::Event event;
     while(pendingInput.pop(event)){
+        if(shelfOpen.load()){
+            // Touch input uses its own down/move/up queue; never play on touch-down.
+            if(!event.touch){
+                auto k=event.key;
+                if(k==KEYBOARD3_KEY_ESC||k=='q'||k=='Q')returnShelfHome();
+                else if(k=='j'||k=='J')moveShelf(-1);
+                else if(k=='k'||k=='K')moveShelf(1);
+                else if(k=='r'||k=='R')refreshShelf();
+                else if(k=='s'||k=='S'){closeShelf();faces_lights::off();startPortal();}
+                else if(k==' '||k==KEYBOARD3_KEY_ENTER)playShelf();
+                else if(k=='l'||k=='L')faces_lights::toggle(millis());
+            }
+            continue;
+        }
+        if(!setupMode&&((!event.touch&&(event.key=='p'||event.key=='P'))||
+            (event.touch&&music_shelf::entryTouch(event.x,event.y,heartTop)))){
+            enterShelf(event.touch);continue;
+        }
         if(!event.touch){
             auto k=event.key;
 #ifdef FACES_SUITE
@@ -756,7 +1331,10 @@ void loop(){
             if((!setupMode&&music::homeTouch(event.x,event.y))||
                (setupMode&&event.x>=0&&event.x<28&&event.y>=0&&event.y<28))suite::open(suite::App::Home);
 #endif
-            if(!setupMode)submit(music::touch(event.x,event.y,heartTop));dirty=true;
+            if(!setupMode){
+                if(music_content::touch(event.x,event.y,heartTop)==music_content::Like){contentPressed=0;contentPressedUntil=millis()+120;}
+                submit(music::touch(event.x,event.y,heartTop));
+            }dirty=true;
         }
     }
     if(now-lastHealth>5000){lastHealth=now;uint8_t id=0;keyboardOK=keyboardOK?keyboard.getModelID(&id)==M5FACES_OK&&id==M5Faces_Keyboard3::MODEL_ID:connectKeyboard();}
@@ -767,18 +1345,21 @@ void loop(){
         xSemaphoreGive(stateLock);
         faces_lights::tick(millis(),base,playing,available,stale,WiFi.status()==WL_CONNECTED,age);
     }
-    bool animating=!setupMode&&(recordMoving||lyricMoving||lyricFade.active(now));
+    bool animating=!shelfOpen.load()&&!setupMode&&(recordMoving||lyricMoving||lyricFade.active(now));
     // Battery/command acknowledgements must not insert a slow full-page render
     // halfway through the 1.05 s record motion. Keep dirty pending until it ends.
     // A real track/cover/background replacement still needs a complete frame.
     bool recordOnly=false;
-    if(recordMoving&&!setupMode&&stageOK){
+    if(recordMoving&&!shelfOpen.load()&&!setupMode&&stageOK){
         xSemaphoreTake(stateLock,portMAX_DELAY);
         recordOnly=!strcmp(drawnTrack,state.track)&&!strcmp(drawnArtId,state.artId)
             &&drawnSceneVersion==sceneVersion&&cachedCoverVersion==coverVersion;
         xSemaphoreGive(stateLock);
     }
-    if((!recordOnly&&dirty.load())||now-lastDraw>(animating?33:200)){
+    now=millis();
+    if(shelfOpen.load()){
+        if(dirty.load()&&now-lastDraw>=33){lastDraw=now;draw();}
+    }else if((!recordOnly&&dirty.load())||now-lastDraw>(animating?33:200)){
         lastDraw=now;draw(recordOnly||(animating&&!dirty.load()&&now-lastFullDraw<500));
     }
     faces_screen::render();delay(2);

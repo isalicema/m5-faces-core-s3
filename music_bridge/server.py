@@ -8,12 +8,13 @@ import subprocess
 from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from .backend import MusicBackend, ROOT
 from .lyrics import LyricsService
 from .discovery import DiscoveryResponder
 from .ota import FirmwareCatalog
 from .power import PowerTelemetry
+from .playlists import PlaylistService
 
 
 def load_token(path):
@@ -30,9 +31,10 @@ def load_token(path):
     return token
 
 
-def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None):
+def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None, playlists=None):
     session = secrets.token_urlsafe(32)
     power_telemetry = PowerTelemetry()
+    playlists = playlists if playlists is not None else PlaylistService()
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args): pass  # Do not log tokens or listening history.
         def local(self): return self.client_address[0] in ("127.0.0.1", "::1")
@@ -63,6 +65,12 @@ def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None):
             if path == "/client.js" and self.local():
                 return self.send(200, (ROOT / "music_bridge/client.js").read_bytes(), "text/javascript; charset=utf-8")
             if not self.authenticated(): return self.send(401, {"ok": False, "error": "unauthorized"})
+            if path == "/api/playlists":
+                refresh = parse_qs(urlparse(self.path).query).get("refresh") == ["1"]
+                return self.send(200, playlists.snapshot(refresh=refresh))
+            if path.startswith("/api/playlist-artwork/"):
+                data = playlists.artwork(path.rsplit("/", 1)[1])
+                return self.send(200, data, "image/jpeg") if data else self.send(404, {"ok": False})
             if path == "/api/power":
                 latest=power_telemetry.snapshot()
                 boot=ota_catalog.status() if ota_catalog else None
@@ -109,7 +117,7 @@ def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None):
                     return self.send(403, {"ok": False})
                 return self.send(200, {"ok": True}, cookie=True)
             if not self.authenticated(): return self.send(401, {"ok": False, "error": "unauthorized"})
-            if path not in ("/api/action","/api/ota/report"): return self.send(404, {"ok": False})
+            if path not in ("/api/action","/api/ota/report","/api/playlists/play"): return self.send(404, {"ok": False})
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 2048: raise ValueError("invalid body size")
@@ -119,6 +127,9 @@ def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None):
                 if path == "/api/ota/report":
                     if not ota_catalog:return self.send(404,{"ok":False})
                     ota_catalog.record_report(request);return self.send(200,{"ok":True})
+                if path == "/api/playlists/play":
+                    result = playlists.play(request.get("id"), request.get("request_id"))
+                    return self.send(200 if result.get("ok") else 409, result)
                 result = backend.action(request.get("action"), request.get("track_id"), request.get("request_id"))
                 return self.send(200 if result.get("ok") else 409, result)
             except (ValueError, TypeError, OSError):

@@ -1,0 +1,35 @@
+{
+  "authority": "FACES-038; Design System 1.1.1",
+  "source": "assets/home-source/home-art-approved.png",
+  "source_sha256": "7f9eb3a46d9333b753e06d3eeb027fcc56d7527fd1dfdf182973db858b4ad4d5",
+  "sample_box": [
+    208,
+    34,
+    104,
+    92
+  ],
+  "record_destination": [
+    200,
+    34
+  ],
+  "semantic_mask": {
+    "shape": "circle",
+    "coordinateSpace": "record-element-local-css-px",
+    "sampleBoxWidth": 104,
+    "sampleBoxHeight": 92,
+    "radius": 52,
+    "localCenterX": 52,
+    "localCenterY": 46,
+    "verticalOverflowEachSide": 6,
+    "parentClipsToCard": true
+  },
+  "sleeve": [
+    194,
+    98,
+    116,
+    26
+  ],
+  "border_owner": "approved baked Music card",
+  "visual_divider": false,
+  "web_written": false
+}

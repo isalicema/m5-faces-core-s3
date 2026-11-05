@@ -16,8 +16,8 @@
   },
   "cards": [
     {
-      "id": "openMusic",
-      "style": "cloud-card",
+      "id": "musicCard",
+      "style": "segmented-music-card",
       "x": 8,
       "y": 34,
       "w": 304,
@@ -33,7 +33,51 @@
       "keyX": 18,
       "keyY": 99,
       "subtitleColor": "#4f4d49",
-      "art": "music-selected-art.png"
+      "art": "music-selected-art.png",
+      "visualDivider": false,
+      "actions": [
+        {
+          "id": "openMusic",
+          "role": "now-playing",
+          "key": "M",
+          "x": 8,
+          "y": 34,
+          "w": 184,
+          "h": 92
+        },
+        {
+          "id": "openShelfHome",
+          "role": "collection",
+          "key": "P",
+          "x": 192,
+          "y": 34,
+          "w": 120,
+          "h": 92,
+          "sleeve": {
+            "label": "COLLECTION",
+            "x": 194,
+            "y": 98,
+            "width": 116,
+            "height": 26,
+            "recordDiameter": 104,
+            "recordCenterX": 252,
+            "recordSourceMask": {
+              "shape": "circle",
+              "coordinateSpace": "record-element-local-css-px",
+              "sampleBoxWidth": 104,
+              "sampleBoxHeight": 92,
+              "radius": 52,
+              "localCenterX": 52,
+              "localCenterY": 46,
+              "verticalOverflowEachSide": 6,
+              "parentClipsToCard": true
+            },
+            "key": "P",
+            "keycapStyle": "home-shortcut",
+            "labelSize": 10
+          }
+        }
+      ]
     },
     {
       "id": "openRadio",

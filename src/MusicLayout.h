@@ -36,4 +36,6 @@ constexpr int powerRight = 312;
 constexpr int powerY = 12;
 constexpr int sourceRight = 175;
 constexpr int powerGap = 4;
+constexpr int collectionEntryWidth = 50;
+constexpr int collectionEntryHeight = 20;
 }

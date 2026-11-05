@@ -2,7 +2,7 @@
 #include "LauncherModel.h"
 #ifdef FACES_SUITE
 namespace suite { [[noreturn]] void open(App app); bool inputReady(); }
-namespace cloud_app {void setup();void loop();}
+namespace cloud_app {void setup(bool collection=false);void loop();}
 namespace companion_app {void setup();void loop();}
 namespace connection_app {void setup();void loop();}
 namespace radio_app {void setup();void loop();}

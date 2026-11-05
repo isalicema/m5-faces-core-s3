@@ -22,8 +22,9 @@ player, and a small on-device companion into one project.
 
 ## Included
 
-- `suite` firmware launches Music Remote (`M`), Radio (`R`), Companion (`A`),
-  and Connection Center (`S`); press `SYM + 0` to return to the launcher.
+- `suite` firmware launches Music Remote (`M`), its Collection shelf (`P`),
+  Radio (`R`), Companion (`A`), and Connection Center (`S`); press `SYM + 0`
+  to return to the launcher.
 - The optional Mac music bridge provides a pairing-token protected browser
   preview and supports Apple Music and NetEase Cloud Music metadata and
   playback actions. Audio stays on the Mac.
@@ -47,6 +48,13 @@ player, and a small on-device companion into one project.
   when a match is available. The UI preserves the last complete artwork/theme
   while new media is decoding. It controls the Mac; it does not stream or decode
   audio itself.
+- **Collection shelf:** When the optional Mac Bridge is configured with the
+  official NetEase Cloud Music CLI, it reads only collected playlists, excludes
+  playlists created by the signed-in account (including Liked Songs), and
+  presents them in a five-cover Cover Flow. Browsing never starts playback;
+  only the centred cover or the confirm control makes one explicit, non-retried
+  request to the Mac client. Cover images and playlist data stay in the local
+  Bridge cache and are never committed to this repository.
 - **Internet Radio:** the device connects to Wi-Fi and plays the built-in radio
   stations through its own speaker. The browser page is a visual preview only.
 - **Companion:** an on-device animated face with touch, motion, proximity, and
@@ -62,10 +70,11 @@ player, and a small on-device companion into one project.
 
 | Context | Keyboard | Touch / device behavior |
 | --- | --- | --- |
-| Home | `S` Connection Center, `M` Music, `R` Radio, `A` Companion | Tap a card to enter its app, or tap the `S Connection` header. |
+| Home | `S` Connection Center, `M` Now Playing, `P` Collection, `R` Radio, `A` Companion | The Music card has two invisible regions: its left side opens Now Playing; its right record sleeve opens Collection. Tap the `S Connection` header for setup. |
 | All apps | `SYM + 0` / `ESC` returns home | Use the visible home/back target. |
 | Connection Center | `A` automatic, `H` home, `W` work, `E` edit, `Q` / `ESC` home | Pick a saved network or open the temporary setup hotspot. |
-| Music | `J` previous, `Space` play/pause, `K` next, `H` favourite, `C` repeat one, `V` repeat all; `S` Connection Center | Tap the corresponding controls. |
+| Music | `J` previous, `Space` play/pause, `K` next, `H` favourite, `C` repeat one, `V` repeat all, `P` Collection; `S` Connection Center | Tap the corresponding controls, or use the Collection pill beside Favourite. |
+| Collection | `J` / `K` browse, `Space` / Enter request playback, `R` refresh, `Q` / `ESC` home | Swipe or tap a side cover to browse; tap the centred cover or its confirm button to make one playback request. A drag never becomes a play tap. |
 | Radio | `Q` / `ESC` home, `S` Connection Center, `Space` play/pause, `J` / `K` tune, `1`–`3` select a station, `+` / `-` volume | Select a station, use `DEVICE AUDIO` to play/pause, or use the Wi-Fi target. Playback is local to the hardware. |
 | Companion | Any Keyboard3 key wakes quiet standby; `Q` or `ESC` returns home | Touch the face; after three idle minutes, touch or any key restores sensor responses. Motion and proximity do not wake quiet standby. |
 
@@ -93,6 +102,18 @@ trusted LAN, restart with `./tools/start_music.command --lan`, then enter the
 Bridge address, port, and pairing token through Connection Center. When LAN
 mode is enabled, a paired device can also discover the Bridge automatically;
 the saved address remains a fallback.
+
+### NetEase Cloud Music Collection shelf
+
+The shelf is opt-in. Install and sign in to the official NetEase Cloud Music
+CLI on the Mac that runs the Bridge, then ensure `ncm-cli` is available to the
+Bridge process. If it lives outside that process's `PATH`, set the local-only
+`FACES_NCM_CLI` environment variable to its absolute executable path. The
+Bridge never stores that CLI's credentials, exports your collection, or embeds
+playlist data in firmware. A failed login, missing CLI, or network error stays
+visible in the shelf and can be retried with `R`; it is not presented as an
+empty library. See [MUSIC_CONTROLLER.md](MUSIC_CONTROLLER.md) for the
+configuration and interaction contract.
 
 To publish an OTA candidate, provide the MAC address of the device you control
 at publish time. The address is stored only in ignored local OTA metadata and
@@ -126,6 +147,10 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 Several C++ model tests are standalone C++17/sanitizer tests. A successful
 firmware build is also an important integration check.
 
+The public UI contract and exact layout tokens live in
+[ui/FACES-DESIGN-SYSTEM.md](ui/FACES-DESIGN-SYSTEM.md) and
+[ui/faces-design-tokens.json](ui/faces-design-tokens.json).
+
 ## Third-party material
 
 `third_party/stackchan/` records attribution for the StackChan-derived
@@ -143,8 +168,8 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 
 ## 包含内容
 
-- `suite` 整合固件：按 `S` 进入连接中心、`M` 进入音乐遥控器、`R` 进入收音机、
-  `A` 进入小伙伴；`SYM + 0` 返回主菜单。
+- `suite` 整合固件：按 `S` 进入连接中心、`M` 进入音乐遥控器、`P` 进入收藏唱片架、
+  `R` 进入收音机、`A` 进入小伙伴；`SYM + 0` 返回主菜单。
 - 可选的 Mac 音乐桥接：提供带配对令牌保护的浏览器预览，可读取并控制 Apple
   Music 与网易云音乐；声音始终由 Mac 播放。
 - 包括 CoreS3 触控、Keyboard3 指示灯、电池与息屏 UI、收音机、OTA、小伙伴逻辑
@@ -161,6 +186,10 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 - **音乐遥控器：** 显示 Apple Music 与网易云音乐来源、封面色彩、播放状态、进度、
   喜欢状态和可匹配的同步歌词。新媒体尚未解码完成时会保留上一张完整封面与主题，
   避免闪成空白；它控制 Mac 播放，不在设备端串流或解码音频。
+- **收藏唱片架：** 可选的 Mac Bridge 配置好网易云音乐官方 CLI 后，只读取账号收藏
+  的歌单，排除账号自己创建的歌单（含“喜欢的音乐”），并以五张封面的 Cover Flow 浏览。
+  浏览不会开始播放；只有中央封面或确认控件才会向 Mac 客户端发出一次显式、不会自动
+  重试的播放请求。封面和歌单数据只保存在本机 Bridge 缓存，不会进入本仓库。
 - **网络收音机：** 设备自行连接 Wi-Fi，并通过自身扬声器播放内置电台；浏览器页面只
   用于界面预览，不会在 Mac 播放电台。
 - **小伙伴：** 设备端动态小脸支持触摸、运动、接近和摄像头运动响应；在小伙伴内连续
@@ -174,10 +203,11 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 
 | 场景 | 键盘 | 触屏 / 设备交互 |
 | --- | --- | --- |
-| 主菜单 | `S` 连接中心、`M` 音乐、`R` 收音机、`A` 小伙伴 | 点击对应卡片进入，或点击顶部的 `S 连接`。 |
+| 主菜单 | `S` 连接中心、`M` 正在播放、`P` 收藏唱片架、`R` 收音机、`A` 小伙伴 | Music 主卡左侧进入正在播放，右侧唱片封套进入收藏；点击顶部 `S 连接` 可配网。 |
 | 所有 App | `SYM + 0` / `ESC` 返回主菜单 | 点击页面中可见的返回/主菜单区域。 |
 | 连接中心 | `A` 自动、`H` 家庭、`W` 公司、`E` 编辑、`Q` / `ESC` 返回 | 选择已保存网络，或开启临时配网热点。 |
-| 音乐遥控器 | `J` 上一首、`空格` 播放/暂停、`K` 下一首、`H` 喜欢、`C` 单曲循环、`V` 列表循环；`S` 连接中心 | 点击对应控件。 |
+| 音乐遥控器 | `J` 上一首、`空格` 播放/暂停、`K` 下一首、`H` 喜欢、`C` 单曲循环、`V` 列表循环、`P` 收藏；`S` 连接中心 | 点击对应控件，或点击喜欢旁的收藏胶囊。 |
+| 收藏唱片架 | `J` / `K` 浏览、`空格` / Enter 请求播放、`R` 刷新、`Q` / `ESC` 返回主菜单 | 横滑或点侧面封面浏览；点中央封面或确认控件发出一次播放请求。拖动后的抬手不会误播放。 |
 | 网络收音机 | `Q` / `ESC` 返回主菜单、`S` 连接中心、`空格` 播放/暂停、`J` / `K` 切台、`1`–`3` 直选、`+` / `-` 音量 | 选择电台，点击 `DEVICE AUDIO` 播放/暂停，或点击 Wi-Fi 区域进入连接中心；声音由硬件本地播放。 |
 | 小伙伴 | 任意 Keyboard3 键唤醒静止待机；`Q` 或 `ESC` 返回主菜单 | 触摸小脸；三分钟无互动后，触屏或任意键恢复传感器响应，挥手或接近不会唤醒静止待机。 |
 
@@ -202,6 +232,14 @@ pio run -e suite
 局域网连接，请用 `./tools/start_music.command --lan` 重启服务，再在连接中心填写
 Bridge 地址、端口和配对令牌。开启 LAN 模式后，已配对设备也可自动发现 Bridge；
 手填地址仍会保留为后备方式。
+
+### 网易云收藏唱片架
+
+唱片架为可选功能。请在运行 Bridge 的 Mac 上安装并登录网易云音乐官方 CLI，并让
+Bridge 进程能够找到 `ncm-cli`。若 CLI 不在该进程的 `PATH` 中，可在本机环境设置
+`FACES_NCM_CLI` 为它的绝对可执行路径。Bridge 不保存 CLI 凭据、不导出收藏，也不把
+歌单数据写入固件。登录失效、缺少 CLI 或网络失败会在唱片架中明确显示，可用 `R`
+重试；不会伪装成空歌单。配置与交互约定见 [MUSIC_CONTROLLER.md](MUSIC_CONTROLLER.md)。
 
 发布 OTA 候选包时，需要显式传入你所控制设备的 MAC 地址；该地址只保存在被
 Git 忽略的本地 OTA 元数据里，并与固件清单绑定：
@@ -230,6 +268,10 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 
 部分 C++ 状态模型测试可独立以 C++17 与 sanitizers 运行；成功构建固件也是重要的
 集成验证。
+
+公开 UI 契约和精确布局 token 位于
+[ui/FACES-DESIGN-SYSTEM.md](ui/FACES-DESIGN-SYSTEM.md) 与
+[ui/faces-design-tokens.json](ui/faces-design-tokens.json)。
 
 ## 第三方内容
 
