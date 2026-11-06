@@ -18,7 +18,11 @@ playlists created by the same account, including the special Liked Songs row.
 Playlist data, artwork and cache entries stay in memory. Artwork downloads are
 restricted to validated NetEase CDN URLs, limited in size, and held in bounded
 caches. A missing login, CLI, or network connection is a visible error state;
-it is never silently treated as an empty collection.
+it is never silently treated as an empty collection. The shelf recommends
+`ncm-cli login` only for an explicit missing or expired session. Generic
+authentication or permission failures are reported separately, while temporary
+network, service, and malformed-response failures ask you to press `R` and
+check the Mac network if they persist. Raw CLI output is never shown.
 
 ## Controls
 

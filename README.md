@@ -127,8 +127,11 @@ Bridge process. If it lives outside that process's `PATH`, set the local-only
 Bridge never stores that CLI's credentials, exports your collection, or embeds
 playlist data in firmware. A failed login, missing CLI, or network error stays
 visible in the shelf and can be retried with `R`; it is not presented as an
-empty library. See [MUSIC_CONTROLLER.md](MUSIC_CONTROLLER.md) for the
-configuration and interaction contract.
+empty library. The shelf recommends `ncm-cli login` only for an explicit
+missing or expired session; authentication/permission failures and temporary
+network/service failures use distinct messages without exposing raw CLI output.
+See [MUSIC_CONTROLLER.md](MUSIC_CONTROLLER.md) for the configuration and
+interaction contract.
 
 To publish an OTA candidate, provide the MAC address of the device you control
 at publish time. The address is stored only in ignored local OTA metadata and
@@ -254,7 +257,9 @@ Bridge 地址、端口和配对令牌。开启 LAN 模式后，已配对设备�
 Bridge 进程能够找到 `ncm-cli`。若 CLI 不在该进程的 `PATH` 中，可在本机环境设置
 `FACES_NCM_CLI` 为它的绝对可执行路径。Bridge 不保存 CLI 凭据、不导出收藏，也不把
 歌单数据写入固件。登录失效、缺少 CLI 或网络失败会在唱片架中明确显示，可用 `R`
-重试；不会伪装成空歌单。配置与交互约定见 [MUSIC_CONTROLLER.md](MUSIC_CONTROLLER.md)。
+重试；不会伪装成空歌单。只有明确未登录或会话失效时才建议运行 `ncm-cli login`；
+认证/权限异常与临时网络/服务失败会分别提示，且不会暴露 CLI 原始输出。配置与交互约定见
+[MUSIC_CONTROLLER.md](MUSIC_CONTROLLER.md)。
 
 发布 OTA 候选包时，需要显式传入你所控制设备的 MAC 地址；该地址只保存在被
 Git 忽略的本地 OTA 元数据里，并与固件清单绑定：

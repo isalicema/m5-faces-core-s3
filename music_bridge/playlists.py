@@ -111,6 +111,40 @@ def orpheus_playlist_receipt(args, result):
     return {'success': True, 'receipt': 'orpheus-launch'}
 
 
+LOGIN_REQUIRED = '网易云未登录或登录已失效，请在 Mac 运行 ncm-cli login 后刷新'
+REQUEST_FAILED = '网易云请求暂时失败，请按 R 刷新；持续失败请检查 Mac 网络'
+ACCESS_DENIED = '网易云认证或权限异常，请在 Mac 检查 CLI 配置与账号权限'
+PLAY_UNCONFIRMED = '播放结果未确认，请查看 Mac 网易云；不会自动重试'
+
+
+def explicit_login_failure(message):
+    """Only standalone user-session errors qualify, never a login help hint.
+
+    In particular, a failed token refresh may be a network failure. Do not
+    infer an expired login from a stack trace, URL, or suggested CLI command.
+    """
+    if not isinstance(message, str):
+        return False
+    return message.strip().rstrip('。.!！').casefold() in {
+        '未登录', '请先登录', '用户未登录', '用户登录已失效', '登录已失效',
+        '登录已过期', '登录过期', '登录状态已失效', '登录状态已过期',
+        'not logged in', 'login required', 'user login required',
+        'user session expired',
+    }
+
+
+def cli_failure_message(value=None, *, playing=False, text=''):
+    code = str(value.get('code', '')) if isinstance(value, dict) else ''
+    # 301 is the existing NetEase login-required response. Generic 401/403
+    # can instead concern developer credentials or permissions.
+    message = (value.get('message') or value.get('msg') or value.get('error')) if isinstance(value, dict) else text
+    if code == '301' or explicit_login_failure(message):
+        return LOGIN_REQUIRED
+    if code in ('401', '403'):
+        return ACCESS_DENIED
+    return PLAY_UNCONFIRMED if playing else REQUEST_FAILED
+
+
 class PlaylistService:
     COVER_CACHE_LIMIT = 64
     COVER_CACHE_BYTES = 2 * 1024 * 1024
@@ -152,18 +186,15 @@ class PlaylistService:
         try:
             value = json.loads(result.stdout)
         except (ValueError, TypeError):
-            combined = result.stdout + result.stderr
-            if '登录' in combined or 'login' in combined.lower():
-                raise PlaylistError('请在 Mac 运行 ncm-cli login，登录后刷新')
-            if args[0] == 'play':
-                raise PlaylistError('播放结果未确认，请查看 Mac 网易云；不会自动重试')
-            raise PlaylistError('网易云 CLI 暂时不可用，请在 Mac 检查网络和客户端')
+            # Prefer stdout; inspect stderr only when stdout is empty. Never
+            # search arbitrary output for the words "login" or "登录".
+            raise PlaylistError(cli_failure_message(
+                playing=args[0] == 'play', text=result.stdout.strip() or result.stderr.strip()))
         if not isinstance(value, dict):
-            raise PlaylistError('网易云返回异常，请刷新重试')
-        if result.returncode != 0 or value.get('code') in (401, 403, 301):
-            if value.get('code') in (401, 403, 301):
-                raise PlaylistError('请在 Mac 运行 ncm-cli login，登录后刷新')
-            raise PlaylistError('网易云请求失败，请在 Mac 检查网络和登录')
+            raise PlaylistError(cli_failure_message(playing=args[0] == 'play'))
+        code = value.get('code')
+        if result.returncode != 0 or (code is not None and str(code) not in ('0', '200')):
+            raise PlaylistError(cli_failure_message(value, playing=args[0] == 'play'))
         return value
 
     def _list(self, kind):
@@ -175,7 +206,7 @@ class PlaylistService:
             result = self.runner(['playlist', kind, '--limit', '500', '--offset', str(offset),
                                   '--output', 'json', '--userInput', '读取本人收藏的歌单用于Faces唱片架，排除本人创建的歌单'])
             if not isinstance(result, dict) or result.get('code') != 200:
-                raise PlaylistError('无法读取收藏歌单，请在 Mac 检查登录后刷新')
+                raise PlaylistError(cli_failure_message(result))
             data = result.get('data')
             if not isinstance(data, dict) or not isinstance(data.get('records'), list):
                 raise PlaylistError('歌单数据异常，请刷新重试')

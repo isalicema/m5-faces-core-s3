@@ -162,6 +162,51 @@ class PlaylistTests(unittest.TestCase):
             self.assertEqual(run.call_args.kwargs['timeout'],25)
             self.assertTrue(run.call_args.kwargs['env']['PATH'].startswith('/tmp/node/bin:'))
 
+    def test_cli_failures_distinguish_session_network_and_permissions(self):
+        cases = [
+            (0, '{"code":301}', '', '登录已失效'),
+            (1, '{"code":401,"message":"用户未登录"}', '', '登录已失效'),
+            (1, 'not logged in', '', '登录已失效'),
+            (1, '', '请先登录', '登录已失效'),
+            (1, '{"code":401,"message":"invalid app signature"}', '', '权限异常'),
+            (1, '{"code":403}', '', '权限异常'),
+            (0, '{"code":503,"message":"login service unavailable"}', '', '暂时失败'),
+            (1, '登录刷新失败：fetch failed，请运行 ncm-cli login', '', '暂时失败'),
+            (1, '', 'ENOTFOUND login.music.163.com PRIVATE', '暂时失败'),
+            (1, 'usage: ncm-cli login', '', '暂时失败'),
+            (0, '[]', '', '暂时失败'),
+        ]
+        service = PlaylistService()
+        with mock.patch('music_bridge.playlists.resolve_cli', return_value='/tmp/bin/ncm-cli'), mock.patch('music_bridge.playlists.subprocess.run') as run:
+            for code, stdout, stderr, expected in cases:
+                with self.subTest(stdout=stdout, stderr=stderr):
+                    run.return_value = subprocess.CompletedProcess([], code, stdout, stderr)
+                    with self.assertRaises(PlaylistError) as caught:
+                        service._run(['playlist', 'collected'])
+                    self.assertIn(expected, str(caught.exception))
+                    self.assertNotIn('PRIVATE', str(caught.exception))
+                    if expected != '登录已失效':
+                        self.assertNotIn('ncm-cli login', str(caught.exception))
+
+    def test_play_network_failure_keeps_unknown_outcome_and_never_retries(self):
+        with mock.patch('music_bridge.playlists.resolve_cli', return_value='/tmp/bin/ncm-cli'), mock.patch('music_bridge.playlists.subprocess.run') as run:
+            run.return_value = subprocess.CompletedProcess([], 1, '', 'login refresh failed: timeout')
+            with self.assertRaisesRegex(PlaylistError, '播放结果未确认.*不会自动重试'):
+                PlaylistService()._run(['play', '--playlist'])
+            run.assert_called_once()
+
+    def test_temporary_cli_failure_then_manual_refresh_recovers(self):
+        with mock.patch('music_bridge.playlists.resolve_cli', return_value='/tmp/bin/ncm-cli'), mock.patch('music_bridge.playlists.subprocess.run') as run:
+            run.return_value = subprocess.CompletedProcess([], 1, '', 'login refresh: network error')
+            service = PlaylistService()
+            state = wait_loaded(service)
+            self.assertIn('暂时失败', state['message'])
+            run.return_value = subprocess.CompletedProcess([], 0, json.dumps(page([])), '')
+            service.snapshot(refresh=True)
+            state = wait_loaded(service)
+            self.assertTrue(state['ok'])
+            self.assertFalse(state.get('message'))
+
     def test_cli_orpheus_playlist_empty_stdout_receipt(self):
         # Installed CLI 0.1.7 playlist branch omits its JSON formatter. The
         # launch method emits exactly this stderr line, then awaits macOS open.
