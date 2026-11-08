@@ -62,7 +62,8 @@ player, and a small on-device companion into one project.
   artwork, playback state, progress, favourite status and synchronised lyrics
   when a match is available. The UI preserves the last complete artwork/theme
   while new media is decoding. It controls the Mac; it does not stream or decode
-  audio itself.
+  audio itself. In Music and Collection, `O` can toggle the Mac's system audio
+  between a configured AirPlay speaker and its previous output.
 - **Collection shelf:** When the optional Mac Bridge is configured with the
   official NetEase Cloud Music CLI, it reads only collected playlists, excludes
   playlists created by the signed-in account (including Liked Songs), and
@@ -88,8 +89,8 @@ player, and a small on-device companion into one project.
 | Home | `S` Connection Center, `M` Now Playing, `P` Collection, `R` Radio, `A` Companion | The Music card has two invisible regions: its left side opens Now Playing; its right record sleeve opens Collection. Tap the `S Connection` header for setup. |
 | All apps | `SYM + 0` / `ESC` returns home | Use the visible home/back target. |
 | Connection Center | `A` automatic, `H` home, `W` work, `E` edit, `Q` / `ESC` home | Pick a saved network or open the temporary setup hotspot. |
-| Music | `J` previous, `Space` play/pause, `K` next, `H` favourite, `C` repeat one, `V` repeat all, `P` Collection; `S` Connection Center | Tap the corresponding controls, or use the Collection pill beside Favourite. |
-| Collection | `J` / `K` browse, `Space` / Enter request playback, `R` refresh, `Q` / `ESC` home | Swipe or tap a side cover to browse; tap the centred cover or its confirm button to make one playback request. A drag never becomes a play tap. |
+| Music | `J` previous, `Space` play/pause, `K` next, `H` favourite, `C` repeat one, `V` repeat all, `P` Collection, `O` system audio/AirPlay; `S` Connection Center | Tap the corresponding controls, or use the Collection pill beside Favourite. |
+| Collection | `J` / `K` browse, `Space` / Enter request playback, `R` refresh, `O` system audio/AirPlay, `Q` / `ESC` home | Swipe or tap a side cover to browse; tap the centred cover or its confirm button to make one playback request. A drag never becomes a play tap. |
 | Radio | `Q` / `ESC` home, `S` Connection Center, `Space` play/pause, `J` / `K` tune, `1`–`3` select a station, `+` / `-` volume | Select a station, use `DEVICE AUDIO` to play/pause, or use the Wi-Fi target. Playback is local to the hardware. |
 | Companion | Any Keyboard3 key wakes quiet standby; `Q` or `ESC` returns home | Touch the face; after three idle minutes, touch or any key restores sensor responses. Motion and proximity do not wake quiet standby. |
 
@@ -111,6 +112,12 @@ The Bridge is optional and never opens a USB serial port:
 ./tools/build_music_helper.sh
 ./tools/start_music.command
 ```
+
+For the optional system-audio AirPlay toggle, configure an exact speaker name
+in ignored `.local/airplay.json` and grant the helper macOS Accessibility
+permission. System Settings may appear briefly while the output is selected,
+then is hidden and the previous foreground app is restored. See
+[AIRPLAY.md](AIRPLAY.md) for setup and safety behavior.
 
 Open the displayed localhost URL for the preview. For a paired device on a
 trusted LAN, restart with `./tools/start_music.command --lan`, then enter the
@@ -203,7 +210,8 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
   可保存两套网络、自动或手动选择；需要修改时，会开启带临时随机密码的配网热点。
 - **音乐遥控器：** 显示 Apple Music 与网易云音乐来源、封面色彩、播放状态、进度、
   喜欢状态和可匹配的同步歌词。新媒体尚未解码完成时会保留上一张完整封面与主题，
-  避免闪成空白；它控制 Mac 播放，不在设备端串流或解码音频。
+  避免闪成空白；它控制 Mac 播放，不在设备端串流或解码音频。在音乐遥控器和收藏
+  唱片架中，`O` 可在指定 AirPlay 扬声器与 Mac 原声音输出之间切换系统音频。
 - **收藏唱片架：** 可选的 Mac Bridge 配置好网易云音乐官方 CLI 后，只读取账号收藏
   的歌单，排除账号自己创建的歌单（含“喜欢的音乐”），并以五张封面的 Cover Flow 浏览。
   浏览不会开始播放；只有中央封面或确认控件才会向 Mac 客户端发出一次显式、不会自动
@@ -224,8 +232,8 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
 | 主菜单 | `S` 连接中心、`M` 正在播放、`P` 收藏唱片架、`R` 收音机、`A` 小伙伴 | Music 主卡左侧进入正在播放，右侧唱片封套进入收藏；点击顶部 `S 连接` 可配网。 |
 | 所有 App | `SYM + 0` / `ESC` 返回主菜单 | 点击页面中可见的返回/主菜单区域。 |
 | 连接中心 | `A` 自动、`H` 家庭、`W` 公司、`E` 编辑、`Q` / `ESC` 返回 | 选择已保存网络，或开启临时配网热点。 |
-| 音乐遥控器 | `J` 上一首、`空格` 播放/暂停、`K` 下一首、`H` 喜欢、`C` 单曲循环、`V` 列表循环、`P` 收藏；`S` 连接中心 | 点击对应控件，或点击喜欢旁的收藏胶囊。 |
-| 收藏唱片架 | `J` / `K` 浏览、`空格` / Enter 请求播放、`R` 刷新、`Q` / `ESC` 返回主菜单 | 横滑或点侧面封面浏览；点中央封面或确认控件发出一次播放请求。拖动后的抬手不会误播放。 |
+| 音乐遥控器 | `J` 上一首、`空格` 播放/暂停、`K` 下一首、`H` 喜欢、`C` 单曲循环、`V` 列表循环、`P` 收藏、`O` 系统音频/AirPlay；`S` 连接中心 | 点击对应控件，或点击喜欢旁的收藏胶囊。 |
+| 收藏唱片架 | `J` / `K` 浏览、`空格` / Enter 请求播放、`R` 刷新、`O` 系统音频/AirPlay、`Q` / `ESC` 返回主菜单 | 横滑或点侧面封面浏览；点中央封面或确认控件发出一次播放请求。拖动后的抬手不会误播放。 |
 | 网络收音机 | `Q` / `ESC` 返回主菜单、`S` 连接中心、`空格` 播放/暂停、`J` / `K` 切台、`1`–`3` 直选、`+` / `-` 音量 | 选择电台，点击 `DEVICE AUDIO` 播放/暂停，或点击 Wi-Fi 区域进入连接中心；声音由硬件本地播放。 |
 | 小伙伴 | 任意 Keyboard3 键唤醒静止待机；`Q` 或 `ESC` 返回主菜单 | 触摸小脸；三分钟无互动后，触屏或任意键恢复传感器响应，挥手或接近不会唤醒静止待机。 |
 
@@ -245,6 +253,10 @@ pio run -e suite
 ./tools/build_music_helper.sh
 ./tools/start_music.command
 ```
+
+若启用系统音频 AirPlay 切换，请在被忽略的 `.local/airplay.json` 中填写扬声器的精确
+名称，并为辅助程序授予 macOS 辅助功能权限。选择输出时系统设置可能短暂出现，随后会
+隐藏并恢复先前的前台 App。设置方法与安全边界见 [AIRPLAY.md](AIRPLAY.md)。
 
 在浏览器打开终端显示的 localhost 地址即可预览。若要让已配对的设备通过受信任
 局域网连接，请用 `./tools/start_music.command --lan` 重启服务，再在连接中心填写

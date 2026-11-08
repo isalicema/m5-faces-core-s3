@@ -80,6 +80,8 @@ uint32_t lastFullDraw=0;
 char drawnTrack[32]="",drawnArtId[32]="";
 uint32_t lastPoll = 0, lastDraw = 0, lastHealth = 0, rebootAt = 0;
 std::atomic<bool> busy{false};
+std::atomic<bool> audioSwitching{false};
+std::atomic<uint32_t> audioNoticeUntil{0};
 uint32_t connectionStarted=0;
 InputEventQueue pendingInput;
 bool inputPumpReady=false;
@@ -140,7 +142,7 @@ State state;
 std::vector<uint8_t> cover, scene;
 SemaphoreHandle_t stateLock;
 QueueHandle_t queue;
-struct Command { music::Action action; char track[32], request[40]; bool playlist=false; uint32_t shelfEpoch=0; };
+struct Command { music::Action action; char track[32], request[40]; bool playlist=false; bool audio=false; uint32_t shelfEpoch=0; };
 struct ShelfEntry { std::string id,title; int tracks=0; };
 struct ShelfArt { std::string id; std::vector<uint8_t> bytes; uint32_t retryAt=0,used=0; };
 struct ShelfState {
@@ -203,8 +205,8 @@ bool get(const String& path, std::vector<uint8_t>& body, size_t limit, const Str
     // Connection establishment may need a TCP retransmission on the LAN.
     // This never retries an HTTP action whose outcome may already have changed.
     http.setConnectTimeout(payload.isEmpty()?1200:3000);
-    // Mac dispatch may perform two bounded 4-second subprocess calls.
-    http.setTimeout(payload.isEmpty()?1500:15000);
+    // Audio routing may wait for macOS to expose and connect an AirPlay output.
+    http.setTimeout(path=="/api/audio/toggle"?45000:payload.isEmpty()?1500:15000);
     if (!http.begin(client,"http://"+host+":"+String(bridgePort)+path)) return false;
     http.addHeader("Authorization","Bearer "+token);
     if(path=="/api/state"){
@@ -308,7 +310,7 @@ void worker(void*) {
             char* json=cJSON_PrintUnformatted(j);
             std::vector<uint8_t> bytes;
             uint32_t actionAt=millis();const char* outcome="unconfirmed";
-            bool ok=json && get(cmd.playlist?"/api/playlists/play":"/api/action",bytes,2048,String(json));
+            bool ok=json && get(cmd.audio?"/api/audio/toggle":cmd.playlist?"/api/playlists/play":"/api/action",bytes,2048,String(json));
             if(json)cJSON_free(json); cJSON_Delete(j);
             if(ok){
                 bytes.push_back(0); j=cJSON_Parse(reinterpret_cast<char*>(bytes.data()));
@@ -329,6 +331,7 @@ void worker(void*) {
                 if(shelf.epoch==cmd.shelfEpoch)shelf.error=failed.message;
                 xSemaphoreGive(stateLock);
             }
+            if(cmd.audio){audioSwitching.store(false);if(strcmp(outcome,"accepted"))audioNoticeUntil.store(millis()+5000);}
             busy.store(false);dirty.store(true); refreshAt=0;
             sync.afterAction(millis());
         }
@@ -552,6 +555,16 @@ void handleShelfTouches(){
             syncShelfSelection();dirty=true;if(tap)shelfTap(x,y);
         }
     }
+}
+void submitAudio() {
+    if(setupMode)return;
+    if(WiFi.status()!=WL_CONNECTED){message("等待 Wi-Fi 连接");return;}
+    if(busy.exchange(true))return;
+    Command c{};c.audio=true;c.action=music::None;
+    snprintf(c.request,sizeof(c.request),"%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());
+    audioNoticeUntil.store(0);audioSwitching.store(true);
+    if(xQueueSend(queue,&c,0)!=pdTRUE){audioSwitching=false;busy=false;}
+    else message("正在切换声音…","SENDING");
 }
 void submit(music::Action action) {
     if(action==music::None||setupMode)return;
@@ -901,7 +914,8 @@ void drawShelf(){
     }
     bool moving=shelfMotion.moving(),sending=busy.load();
     char countLabel[28];snprintf(countLabel,sizeof(countLabel),"%u / %u%s",unsigned(count?index+1:0),unsigned(count),truncated?"+":"");
-    std::string caption=sending?"正在请求播放…":!error.empty()&&!loading?error:title;
+    std::string caption=sending?(audioSwitching.load()?"正在切换声音…":"正在请求播放…"):!error.empty()&&!loading?error:title;
+    if(audioNoticeUntil.load()&&int32_t(audioNoticeUntil.load()-millis())>0)caption=snapshot().message;
     if(stale&&error.empty())caption="收藏已过期，按 R 刷新";
     if(WiFi.status()!=WL_CONNECTED)caption="等待 Wi-Fi 连接";
     int pressedFooter=-1;
@@ -1308,6 +1322,7 @@ void loop(){
                 else if(k=='j'||k=='J')moveShelf(-1);
                 else if(k=='k'||k=='K')moveShelf(1);
                 else if(k=='r'||k=='R')refreshShelf();
+                else if(k=='o'||k=='O')submitAudio();
                 else if(k=='s'||k=='S'){closeShelf();faces_lights::off();startPortal();}
                 else if(k==' '||k==KEYBOARD3_KEY_ENTER)playShelf();
                 else if(k=='l'||k=='L')faces_lights::toggle(millis());
@@ -1323,7 +1338,8 @@ void loop(){
 #ifdef FACES_SUITE
             if(k==KEYBOARD3_KEY_ESC||k=='q'||k=='Q')suite::open(suite::App::Home);
 #endif
-            if(k=='l'||k=='L'){if(!setupMode)message("",faces_lights::toggle(millis()));}
+            if(k=='o'||k=='O'){submitAudio();}
+            else if(k=='l'||k=='L'){if(!setupMode)message("",faces_lights::toggle(millis()));}
             else if(k=='s'||k=='S'){faces_lights::off();if(!setupMode)startPortal();}
             else submit(music::key(k));
         }else{

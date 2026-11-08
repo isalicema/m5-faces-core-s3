@@ -15,6 +15,7 @@ from .discovery import DiscoveryResponder
 from .ota import FirmwareCatalog
 from .power import PowerTelemetry
 from .playlists import PlaylistService
+from .airplay import AirPlayService
 
 
 def load_token(path):
@@ -31,10 +32,11 @@ def load_token(path):
     return token
 
 
-def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None, playlists=None):
+def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None, playlists=None, airplay=None):
     session = secrets.token_urlsafe(32)
     power_telemetry = PowerTelemetry()
     playlists = playlists if playlists is not None else PlaylistService()
+    airplay = airplay if airplay is not None else AirPlayService()
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args): pass  # Do not log tokens or listening history.
         def local(self): return self.client_address[0] in ("127.0.0.1", "::1")
@@ -117,7 +119,7 @@ def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None, p
                     return self.send(403, {"ok": False})
                 return self.send(200, {"ok": True}, cookie=True)
             if not self.authenticated(): return self.send(401, {"ok": False, "error": "unauthorized"})
-            if path not in ("/api/action","/api/ota/report","/api/playlists/play"): return self.send(404, {"ok": False})
+            if path not in ("/api/action","/api/ota/report","/api/playlists/play","/api/audio/toggle"): return self.send(404, {"ok": False})
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 2048: raise ValueError("invalid body size")
@@ -127,6 +129,9 @@ def make_server(backend, token, host="127.0.0.1", port=8766, ota_catalog=None, p
                 if path == "/api/ota/report":
                     if not ota_catalog:return self.send(404,{"ok":False})
                     ota_catalog.record_report(request);return self.send(200,{"ok":True})
+                if path == "/api/audio/toggle":
+                    result = airplay.toggle(request.get("request_id"))
+                    return self.send(200 if result.get("ok") else 409, result)
                 if path == "/api/playlists/play":
                     result = playlists.play(request.get("id"), request.get("request_id"))
                     return self.send(200 if result.get("ok") else 409, result)

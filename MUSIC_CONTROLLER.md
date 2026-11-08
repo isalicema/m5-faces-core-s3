@@ -29,13 +29,20 @@ check the Mac network if they persist. Raw CLI output is never shown.
 | View | Keyboard | Touch |
 | --- | --- | --- |
 | Home | `M` Now Playing, `P` Collection | Left Music-card region opens Now Playing; right record sleeve opens Collection. |
-| Now Playing | `P` Collection | Use the Collection pill beside Favourite. |
-| Collection | `J` / `K` browse, `R` refresh, `Space` / Enter request playback, `Q` / Esc home | Swipe or tap side covers to browse; only the centred cover or confirm button requests playback. |
+| Now Playing | `P` Collection, `O` system audio/AirPlay | Use the Collection pill beside Favourite. |
+| Collection | `J` / `K` browse, `R` refresh, `Space` / Enter request playback, `O` system audio/AirPlay, `Q` / Esc home | Swipe or tap side covers to browse; only the centred cover or confirm button requests playback. |
 
 Five covers remain visible while moving. Repeated and reverse browsing preserves
 the current motion; a drag suppresses the following click. A successful request
 means the CLI accepted one dispatch to the Mac player, not that audible playback
 has been independently confirmed. Requests are never retried automatically.
+
+## System audio routing
+
+`O` is available only in Now Playing and Collection. It toggles the Mac's
+system audio between the configured AirPlay speaker and the previously active
+output, independently of music metadata. Configuration stays in ignored local
+files; see [AIRPLAY.md](AIRPLAY.md).
 
 ## Local preview
 

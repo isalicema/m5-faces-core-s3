@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 stage=$(mktemp -d /private/tmp/faces-music-helper.XXXXXX)
 bundle="$stage/FacesMusicHelper.app"
 target="${1:-$HOME/Library/Application Support/FacesMusic/FacesMusicHelper.app}"
-mkdir -p "$bundle/Contents/MacOS" /private/tmp/faces-swift-cache
+mkdir -p "$bundle/Contents/MacOS" /private/tmp/faces-helper-module-cache
 cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>io.github.m5-faces-core-s3.music-helper</string>
@@ -15,7 +15,8 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>NSAppleEventsUsageDescription</key><string>让 Faces 控制 Apple Music 的播放和收藏。</string>
 </dict></plist>
 PLIST
-swiftc -O -module-cache-path /private/tmp/faces-swift-cache mac/FacesMusic.swift -o "$bundle/Contents/MacOS/FacesMusicHelper"
+cp mac/FacesMusic.swift "$stage/main.swift"
+swiftc -O -module-cache-path /private/tmp/faces-helper-module-cache "$stage/main.swift" mac/FacesAudioRoute.swift -o "$bundle/Contents/MacOS/FacesMusicHelper"
 xattr -d com.apple.FinderInfo "$bundle" 2>/dev/null || true
 codesign --force --sign - --identifier io.github.m5-faces-core-s3.music-helper "$bundle"
 

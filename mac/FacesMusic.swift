@@ -168,6 +168,9 @@ func apple(_ command: String, _ action: String, _ request: [String: String]) -> 
     if error != nil { return ["ok": false, "error": "Apple Music 未接受操作，请检查自动化权限", "code": "automation_required"] }
     return ["ok": true, "pending": true]
 }
+if CommandLine.arguments.count > 1 && CommandLine.arguments[1] == "--audio" {
+    audioRouteMain(Array(CommandLine.arguments.dropFirst(2))); exit(0)
+}
 if CommandLine.arguments.contains("--doctor") {
     emit(["ok": true, "accessibility": AXIsProcessTrusted()]); exit(0)
 }
