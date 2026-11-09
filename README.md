@@ -81,6 +81,14 @@ player, and a small on-device companion into one project.
   using device sensors.
 - **Power and status:** Home, Music and Radio retain battery/USB status. A short
   press of the power key dims or wakes the display without stopping app tasks.
+  Music avoids unchanged paused-page redraws, samples power less often while
+  visible and dark, and uses slower state polling when paused or dark while
+  preserving the short post-action refresh burst.
+- **Music responsiveness:** queued controls take priority over cancellable
+  read-only response bodies; action requests are never cancelled or replayed.
+  Collection artwork uses a bounded short retry sequence for initially pending
+  images, then returns to the normal delay. HTTP response-header waits remain
+  synchronous, so this does not promise zero input latency on every network.
 
 ## Interaction
 
@@ -223,7 +231,11 @@ remain under the SIL Open Font License; see `assets/fonts/OFL.txt`.
   工作。触屏或任意 Keyboard3 键会唤醒并恢复传感器；静止期间挥手或摇动不会唤醒。
   浏览器只演示视觉效果，不会读取设备传感器。
 - **电源与状态：** 首页、音乐与收音机均显示电池/USB 状态；短按电源键可息屏或唤醒，
-  App 的后台任务不会因此停止。
+  App 的后台任务不会因此停止。音乐暂停静态页不再重复绘制无变化的整页；亮屏和暗屏
+  分别降低电量采样频率，暂停或暗屏时降低状态轮询频率，同时保留操作后的短时快速刷新。
+- **音乐响应：** 已排队的控制命令优先于可取消的只读响应正文；控制请求本身不会取消
+  或重放。收藏封面首次尚未生成时采用有限的短间隔重试，之后恢复正常等待。HTTP 响应头
+  等待仍是同步的，因此不承诺任何网络环境下都完全没有首键延迟。
 
 ## 交互方式
 

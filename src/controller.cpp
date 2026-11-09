@@ -28,6 +28,7 @@
 #include "MusicShelfAssets.h"
 #include "MusicVisualState.h"
 #include "MusicSync.h"
+#include "MusicIoPolicy.h"
 #include "MusicConnection.h"
 #include "SmoothMusicFonts.h"
 #include "FacesSideLights.h"
@@ -72,6 +73,7 @@ bool setupMode = false, keyboardOK = false;
 std::atomic<bool> dirty{true};
 faces_power::State musicPower;
 uint32_t powerReadAt=0;
+std::atomic<bool> musicVisible{true}, refreshRequested{false};
 // Animate only on a confirmed playback change; connection loss holds the pose.
 float recordReveal = 0, recordTarget = 0;
 uint32_t recordStarted = 0;
@@ -93,6 +95,8 @@ void pollInput(){
     bool onShelf=shelfActiveForInput();
     auto now=millis();if(now-lastPoll<(onShelf?8:5))return;lastPoll=now;
     uint32_t inputAt=micros();M5.update();if(onShelf){shelfUpdateUs+=micros()-inputAt;++shelfInputPolls;}if(faces_screen::tick()){dirty=true;lastDraw=0;}
+    bool visible=faces_screen::appVisible();
+    if(musicVisible.exchange(visible)!=visible && visible){refreshRequested=true;powerReadAt=0;dirty=true;}
     input_diagnostics::sample("music",faces_screen::touchEnabled());
     if(keyboardOK){
         uint8_t raw[10]={};uint32_t keyboardAt=micros();
@@ -142,9 +146,9 @@ State state;
 std::vector<uint8_t> cover, scene;
 SemaphoreHandle_t stateLock;
 QueueHandle_t queue;
-struct Command { music::Action action; char track[32], request[40]; bool playlist=false; bool audio=false; uint32_t shelfEpoch=0; };
+struct Command { music::Action action; char track[32], request[40]; bool playlist=false; bool audio=false; uint32_t shelfEpoch=0,queuedAt=0; };
 struct ShelfEntry { std::string id,title; int tracks=0; };
-struct ShelfArt { std::string id; std::vector<uint8_t> bytes; uint32_t retryAt=0,used=0; };
+struct ShelfArt { std::string id; std::vector<uint8_t> bytes; uint32_t retryAt=0,used=0; music_io::ArtRetry retry; };
 struct ShelfState {
     std::vector<ShelfEntry> items;
     ShelfArt art[music_shelf::jpegCapacity];
@@ -200,7 +204,13 @@ void message(const char* m,const char* badge="CHECK MAC") {
     xSemaphoreGive(stateLock);
 }
 State snapshot() { xSemaphoreTake(stateLock,portMAX_DELAY); State s=state; xSemaphoreGive(stateLock); return s; }
-bool get(const String& path, std::vector<uint8_t>& body, size_t limit, const String& payload="") {
+struct ReadResult {int code=0;bool cancelled=false;};
+bool commandPending(){return busy.load()||(queue&&uxQueueMessagesWaiting(queue)>0);}
+bool get(const String& path, std::vector<uint8_t>& body, size_t limit, const String& payload="",ReadResult* result=nullptr) {
+    ReadResult local; if(!result)result=&local;*result={};
+    const bool readOnly=payload.isEmpty();
+    auto cancelled=[&](){return music_io::cancelRead(readOnly,commandPending());};
+    body.clear();if(cancelled()){result->cancelled=true;return false;}
     WiFiClient client; HTTPClient http;
     // Connection establishment may need a TCP retransmission on the LAN.
     // This never retries an HTTP action whose outcome may already have changed.
@@ -218,19 +228,38 @@ bool get(const String& path, std::vector<uint8_t>& body, size_t limit, const Str
     uint32_t requestAt=millis();int code;
     if (payload.isEmpty()) code=http.GET();
     else { http.addHeader("Content-Type","application/json"); code=http.POST(payload); }
+    result->code=code;uint32_t headersMs=millis()-requestAt;
     int length=http.getSize(); bool ok=false;size_t count=0;
     if (code > 0 && length > 0 && size_t(length)<=limit) {
         body.resize(length+1);
-        count=http.getStream().readBytes(body.data(),length);
+        if(!readOnly)count=http.getStream().readBytes(body.data(),length);
+        else {
+            auto& stream=http.getStream();uint32_t lastData=millis();
+            while(count<size_t(length)){
+                if(cancelled()){result->cancelled=true;break;}
+                int available=stream.available();
+                if(available>0){
+                    size_t chunk=std::min(size_t(available),std::min(size_t(length)-count,size_t(1024)));
+                    int got=stream.read(body.data()+count,chunk);
+                    if(got>0){count+=got;lastData=millis();}
+                }else if(!client.connected())break;
+                if(uint32_t(millis()-lastData)>=1500)break;
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+        }
         body[length]=0; ok=count==size_t(length);
         if (ok) body.resize(length);
     }
     if(!payload.isEmpty())Serial.printf("HTTP action code=%d bytes=%u expected=%d elapsed_ms=%lu rssi=%d\n",code,unsigned(count),length,(unsigned long)(millis()-requestAt),WiFi.RSSI());
-    http.end(); return ok && (code==200 || (!payload.isEmpty() && code==409));
+    if(cancelled())result->cancelled=true;
+    bool success=ok&&!result->cancelled&&(code==200||(!readOnly&&code==409));
+    if(readOnly&&(result->cancelled||!success||millis()-requestAt>=250))
+        Serial.printf("HTTP read kind=%s code=%d cancelled=%d headers_ms=%lu total_ms=%lu bytes=%u\n",path=="/api/state"?"state":path.startsWith("/api/playlist-artwork/")?"shelf-art":path.startsWith("/api/artwork/")?"music-art":"list",code,result->cancelled,(unsigned long)headersMs,(unsigned long)(millis()-requestAt),unsigned(count));
+    http.end();if(!success)body.clear();return success;
 }
 // The UI only changes intent. All HTTP and JPEG retrieval run in the worker.
 void shelfWork() {
-    if(!shelfOpen.load())return;
+    if(!shelfOpen.load()||commandPending())return;
     uint32_t epoch;bool fetch=false,refresh=false;
     xSemaphoreTake(stateLock,portMAX_DELAY);
     epoch=shelf.epoch;
@@ -238,7 +267,13 @@ void shelfWork() {
     xSemaphoreGive(stateLock);
     if(fetch){
         std::vector<uint8_t> bytes;
-        bool ok=get(refresh?"/api/playlists?refresh=1":"/api/playlists",bytes,256000);
+        ReadResult read;
+        bool ok=get(refresh?"/api/playlists?refresh=1":"/api/playlists",bytes,256000,"",&read);
+        if(read.cancelled){
+            xSemaphoreTake(stateLock,portMAX_DELAY);
+            if(shelf.epoch==epoch)shelf.refresh=shelf.refresh||refresh;
+            xSemaphoreGive(stateLock);return;
+        }
         bytes.push_back(0);auto j=ok?cJSON_Parse(reinterpret_cast<char*>(bytes.data())):nullptr;
         std::vector<ShelfEntry> entries;bool valid=j&&flag(j,"ok")&&cJSON_IsArray(field(j,"items"));
         bool truncated=false;
@@ -278,17 +313,20 @@ void shelfWork() {
             auto* found=music_shelf::cacheSlot(shelf.art,id,needed);if(!found)continue;
             if(found->id!=id){*found=ShelfArt{};found->id=id;}
             found->used=millis();
-            if(download.empty()&&found->bytes.empty()&&int32_t(millis()-found->retryAt)>=0){download=id;found->retryAt=millis()+3000;}
+            if(download.empty()&&found->bytes.empty()&&int32_t(millis()-found->retryAt)>=0){download=id;}
         }
     }
     xSemaphoreGive(stateLock);
     if(download.empty())return;
     std::vector<uint8_t> bytes;
-    if(get("/api/playlist-artwork/"+String(download.c_str()),bytes,40000)){
-        xSemaphoreTake(stateLock,portMAX_DELAY);
-        if(shelfOpen.load()&&shelf.epoch==epoch)for(auto& art:shelf.art)if(art.id==download){art.bytes=std::move(bytes);dirty=true;break;}
-        xSemaphoreGive(stateLock);
+    ReadResult read;bool ok=get("/api/playlist-artwork/"+String(download.c_str()),bytes,40000,"",&read);
+    xSemaphoreTake(stateLock,portMAX_DELAY);
+    if(shelf.epoch==epoch)for(auto& art:shelf.art)if(art.id==download){
+        uint32_t delay=art.retry.nextDelay(read.code,read.cancelled,ok);
+        art.retryAt=millis()+delay;
+        if(ok){art.bytes=std::move(bytes);dirty=true;}break;
     }
+    xSemaphoreGive(stateLock);
 }
 void worker(void*) {
     uint32_t refreshAt=0;
@@ -303,6 +341,7 @@ void worker(void*) {
         if(!wifiReported){wifiReported=true;Serial.printf("CONNECT wifi_ms=%lu\n",(unsigned long)(millis()-connectionStarted));}
         Command cmd;
         if (xQueueReceive(queue,&cmd,0)==pdTRUE) {
+            Serial.printf("ACTION queue_ms=%lu kind=%s\n",(unsigned long)(millis()-cmd.queuedAt),cmd.audio?"audio":cmd.playlist?"playlist":"control");
             cJSON* j=cJSON_CreateObject();
             if(cmd.playlist)cJSON_AddStringToObject(j,"id",cmd.track);
             else {cJSON_AddStringToObject(j,"action",music::name(cmd.action));cJSON_AddStringToObject(j,"track_id",cmd.track);}
@@ -335,7 +374,11 @@ void worker(void*) {
             busy.store(false);dirty.store(true); refreshAt=0;
             sync.afterAction(millis());
         }
-        if (millis()-refreshAt>=(snapshot().hasState?sync.interval(millis()):500) || refreshAt==0) {
+        xSemaphoreTake(stateLock,portMAX_DELAY);
+        bool hasState=state.hasState, playing=state.playing;
+        xSemaphoreGive(stateLock);
+        bool wakeRefresh=refreshRequested.exchange(false);
+        if (millis()-refreshAt>=(hasState?sync.interval(millis(),musicVisible.load()||shelfOpen.load(),playing):500) || refreshAt==0 || wakeRefresh) {
             refreshAt=millis(); std::vector<uint8_t> bytes;
             if(get("/api/state",bytes,8192)) {
                 bytes.push_back(0); auto j=cJSON_Parse(reinterpret_cast<char*>(bytes.data()));
@@ -390,19 +433,26 @@ void worker(void*) {
                         strlcpy(next.album,state.album,sizeof(next.album));
                     std::string song=std::string(next.source)+"\n"+next.title+"\n"+next.artist+"\n"+next.album;
                     if(next.available && artworkState.update(song,next.artId)){cover.clear();++coverVersion;}
-                    if(state.playing!=next.playing || state.favorite!=next.favorite || strcmp(state.repeatRequested,next.repeatRequested) || strcmp(state.repeatMode,next.repeatMode) || changed)dirty.store(true);
+                    if(state.playing!=next.playing || state.favorite!=next.favorite || strcmp(state.repeatRequested,next.repeatRequested) || strcmp(state.repeatMode,next.repeatMode) || changed
+                        || state.hasState!=next.hasState || state.available!=next.available || state.stale!=next.stale
+                        || state.actions!=next.actions || state.accentRgb!=next.accentRgb || state.duration!=next.duration
+                        || (!next.playing && state.position!=next.position)
+                        || strcmp(state.title,next.title) || strcmp(state.artist,next.artist) || strcmp(state.source,next.source)
+                        || strcmp(state.album,next.album) || strcmp(state.message,next.message)
+                        || strcmp(state.lyricStatus,next.lyricStatus) || state.lyricCount!=next.lyricCount
+                        || memcmp(state.lyrics,next.lyrics,sizeof(state.lyrics)))dirty.store(true);
                     sceneState.update(next.sceneId);
                     state=next;
                     bool needArt=next.available && artworkState.needsImage();
                     bool needScene=sceneState.needsImage();
                     xSemaphoreGive(stateLock);
-                    if(needArt){
+                    if(needArt&&!commandPending()&&!shelfOpen.load()){
                         std::vector<uint8_t> image;
                         if(get("/api/artwork/"+String(next.artId),image,40000)) {
                             xSemaphoreTake(stateLock,portMAX_DELAY); cover=std::move(image); artworkState.accept(); ++coverVersion; dirty.store(true); xSemaphoreGive(stateLock);
                         }
                     }
-                    if(needScene){
+                    if(needScene&&!commandPending()&&!shelfOpen.load()){
                         std::vector<uint8_t> image;
                         if(get("/api/artwork/"+String(next.sceneId),image,40000)) {
                             xSemaphoreTake(stateLock,portMAX_DELAY);
@@ -414,7 +464,8 @@ void worker(void*) {
                 if(j)cJSON_Delete(j);
             }
         }
-        shelfWork();
+        if(!commandPending())shelfWork();
+        if(commandPending())continue;
         vTaskDelay(pdMS_TO_TICKS(25));
     }
 }
@@ -519,6 +570,7 @@ void playShelf(){
         if(shelfBeforePlay)memcpy(shelfBeforePlay,canvas.getBuffer(),320*240*2);
     }
     snprintf(cmd.request,sizeof(cmd.request),"%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());
+    cmd.queuedAt=millis();
     if(xQueueSend(queue,&cmd,0)!=pdTRUE){busy=false;releaseShelfPlaySnapshot();}
     dirty=true;
 }
@@ -563,6 +615,7 @@ void submitAudio() {
     Command c{};c.audio=true;c.action=music::None;
     snprintf(c.request,sizeof(c.request),"%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());
     audioNoticeUntil.store(0);audioSwitching.store(true);
+    c.queuedAt=millis();
     if(xQueueSend(queue,&c,0)!=pdTRUE){audioSwitching=false;busy=false;}
     else message("正在切换声音…","SENDING");
 }
@@ -574,6 +627,7 @@ void submit(music::Action action) {
     if(busy.exchange(true))return;
     Command c{};c.action=action;strlcpy(c.track,s.track,sizeof(c.track));
     snprintf(c.request,sizeof(c.request),"%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());
+    c.queuedAt=millis();
     if(xQueueSend(queue,&c,0)!=pdTRUE)busy.store(false);
     else message("正在发送…","SENDING");
 }
@@ -915,7 +969,11 @@ void drawShelf(){
     bool moving=shelfMotion.moving(),sending=busy.load();
     char countLabel[28];snprintf(countLabel,sizeof(countLabel),"%u / %u%s",unsigned(count?index+1:0),unsigned(count),truncated?"+":"");
     std::string caption=sending?(audioSwitching.load()?"正在切换声音…":"正在请求播放…"):!error.empty()&&!loading?error:title;
-    if(audioNoticeUntil.load()&&int32_t(audioNoticeUntil.load()-millis())>0)caption=snapshot().message;
+    if(audioNoticeUntil.load()&&int32_t(audioNoticeUntil.load()-millis())>0){
+        // Copy only the caption: a full State temporary reserves >4KB even
+        // when this branch is not taken, exhausting the Collection draw stack.
+        xSemaphoreTake(stateLock,portMAX_DELAY);caption=state.message;xSemaphoreGive(stateLock);
+    }
     if(stale&&error.empty())caption="收藏已过期，按 R 刷新";
     if(WiFi.status()!=WL_CONNECTED)caption="等待 Wi-Fi 连接";
     int pressedFooter=-1;
@@ -1291,10 +1349,12 @@ void loop(){
     }
     pollInput();auto now=millis();
     if(contentPressed>=0&&int32_t(now-contentPressedUntil)>=0){contentPressed=-1;dirty=true;}
-    if(powerReadAt==0||now-powerReadAt>=1000){
+    if(powerReadAt==0||now-powerReadAt>=music::batteryInterval(musicVisible.load())){
         powerReadAt=now;auto power=faces_power::read();
-        xSemaphoreTake(stateLock,portMAX_DELAY);musicPower=power;xSemaphoreGive(stateLock);
-        dirty=true;
+        xSemaphoreTake(stateLock,portMAX_DELAY);
+        bool changed=musicPower.valid!=power.valid||musicPower.present!=power.present||musicPower.usb!=power.usb||musicPower.charging!=power.charging||musicPower.percent!=power.percent;
+        musicPower=power;xSemaphoreGive(stateLock);
+        if(changed)dirty=true;
     }
     if(setupMode)portal.handleClient();
     if(rebootAt && int32_t(now-rebootAt)>=0){
@@ -1361,6 +1421,19 @@ void loop(){
         xSemaphoreGive(stateLock);
         faces_lights::tick(millis(),base,playing,available,stale,WiFi.status()==WL_CONNECTED,age);
     }
+    // Cheap deadline evaluation replaces the old static full-frame fallback.
+    static uint32_t statusCheckAt=0;static uint32_t previousStatus=UINT32_MAX;
+    bool playingNow=false;
+    if(!setupMode && musicVisible.load() && now-statusCheckAt>=200){
+        statusCheckAt=now;xSemaphoreTake(stateLock,portMAX_DELAY);
+        auto connection=music::connection(state.hasState,WiFi.status()==WL_CONNECTED,state.stale,state.available,now-connectionStarted,now-state.received);
+        bool notice=state.notice[0]&&now-state.messageAt<4000;
+        bool audio=audioNoticeUntil.load()&&int32_t(audioNoticeUntil.load()-now)>0;
+        uint32_t status=uint32_t(connection)|(uint32_t(notice)<<8)|(uint32_t(audio)<<9);
+        xSemaphoreGive(stateLock);
+        if(status!=previousStatus){previousStatus=status;dirty=true;}
+    }
+    xSemaphoreTake(stateLock,portMAX_DELAY);playingNow=state.playing;xSemaphoreGive(stateLock);
     bool animating=!shelfOpen.load()&&!setupMode&&(recordMoving||lyricMoving||lyricFade.active(now));
     // Battery/command acknowledgements must not insert a slow full-page render
     // halfway through the 1.05 s record motion. Keep dirty pending until it ends.
@@ -1373,10 +1446,13 @@ void loop(){
         xSemaphoreGive(stateLock);
     }
     now=millis();
-    if(shelfOpen.load()){
+    if(!musicVisible.load()){
+        // draw() already rejects dark frames; avoid scheduling them as well.
+    }else if(shelfOpen.load()){
         if(dirty.load()&&now-lastDraw>=33){lastDraw=now;draw();}
-    }else if((!recordOnly&&dirty.load())||now-lastDraw>(animating?33:200)){
-        lastDraw=now;draw(recordOnly||(animating&&!dirty.load()&&now-lastFullDraw<500));
+    }else if((!recordOnly&&dirty.load())||(animating&&now-lastDraw>33)||(!setupMode&&playingNow&&now-lastDraw>200)){
+        bool partial=recordOnly||(!dirty.load()&&stageOK&&now-lastFullDraw<(animating?500:1000));
+        lastDraw=now;draw(partial);
     }
     faces_screen::render();delay(2);
 }

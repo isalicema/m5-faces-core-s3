@@ -3,7 +3,13 @@
 int main() {
     music::SyncCadence s;
     assert(s.interval(0) == 1800);
+    assert(s.interval(0,true,false)==3500);
+    assert(s.interval(0,false,true)==5000);
+    assert(s.interval(0,false,false)<7000);
+    assert(music::batteryInterval(true)==15000);
+    assert(music::batteryInterval(false)==60000);
     s.afterAction(100);
+    assert(s.interval(100,false,false)==200);
     assert(s.interval(100) == 200);
     assert(s.interval(3099) == 200);
     assert(s.interval(3100) == 1800);

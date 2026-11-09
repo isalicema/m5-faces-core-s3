@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-11-09 — Music efficiency and input scheduling
+
+- Changed the paused Music page to redraw only for visible state changes, while
+  retaining lyric checks, record/lyric animation, and periodic playing progress.
+- Reduced Music battery sampling and state polling when paused or the display is
+  dark; waking requests an immediate refresh and post-action polling remains fast.
+- Prioritised queued controls over cancellable read-only HTTP response bodies.
+  POST actions are never cancelled, retried, or replayed by this policy.
+- Added bounded short retries for initially pending Collection artwork, preserved
+  refresh intent after cancellation, and deferred unrelated Music artwork while
+  Collection is open.
+- Removed a full-state temporary from the Collection caption path, restoring the
+  smaller draw stack while keeping the O-key AirPlay behavior unchanged.
+- Added host regression tests for polling and I/O policies. This source update
+  does not claim a measured battery-life percentage or zero network input latency.
+
+This entry describes source and local validation only. It does not publish a
+Release, deploy a Bridge, perform OTA, or flash a device.
+
 ## 2026-11-08 — O-key system AirPlay routing
 
 - Added an `O` shortcut in Music and Collection to toggle the Mac's system
