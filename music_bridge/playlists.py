@@ -165,6 +165,29 @@ class PlaylistService:
         self.requests = OrderedDict()
         self.playing = False
 
+    @staticmethod
+    def _missing_playlist_message(executable, env):
+        # The CLI can lose its dynamically loaded commands when logged out.
+        # Unknown command alone is not evidence of an expired user session.
+        try:
+            result = subprocess.run([executable, 'login', '--check'],
+                                    capture_output=True, text=True, timeout=8, env=env)
+            if len(result.stdout) > 65536:
+                return REQUEST_FAILED
+            value = json.loads(result.stdout)
+            if not isinstance(value, dict):
+                return REQUEST_FAILED
+            if value.get('success') is False and (
+                explicit_login_failure(value.get('message')) or
+                value.get('message') == '未登录，请执行 ncm-cli login 完成登录'
+            ):
+                return LOGIN_REQUIRED
+            if result.returncode == 0 and value.get('success') is True:
+                return '网易云歌单命令不可用，请在 Mac 检查 CLI 后刷新'
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+        return REQUEST_FAILED
+
     def _run(self, args):
         executable = resolve_cli()
         env = os.environ.copy()
@@ -178,6 +201,9 @@ class PlaylistService:
             raise PlaylistError('读取超时，请检查 Mac 网络后刷新')
         except OSError:
             raise PlaylistError('无法运行 ncm-cli，请检查 Mac 上的安装')
+        if (args[0] == 'playlist' and result.returncode != 0 and
+                (result.stdout.strip() or result.stderr.strip()) == "error: unknown command 'playlist'"):
+            raise PlaylistError(self._missing_playlist_message(executable, env))
         if len(result.stdout) > 8 * 1024 * 1024:
             raise PlaylistError('歌单数据过大，请在 Mac 检查账号')
         receipt = orpheus_playlist_receipt(args, result)

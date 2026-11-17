@@ -188,6 +188,28 @@ class PlaylistTests(unittest.TestCase):
                     if expected != '登录已失效':
                         self.assertNotIn('ncm-cli login', str(caught.exception))
 
+    def test_missing_playlist_command_checks_login_without_guessing(self):
+        cases = [
+            ({'success': False, 'message': '未登录，请执行 ncm-cli login 完成登录'}, '登录已失效'),
+            ({'success': True}, '歌单命令不可用'),
+            ({'success': False, 'message': 'login refresh failed: network error'}, '暂时失败'),
+            ([], '暂时失败'),
+            ('invalid json', '暂时失败'),
+            (subprocess.TimeoutExpired('login', 8), '暂时失败'),
+        ]
+        with mock.patch('music_bridge.playlists.resolve_cli', return_value='/tmp/bin/ncm-cli'), mock.patch('music_bridge.playlists.subprocess.run') as run:
+            for reply, expected in cases:
+                with self.subTest(reply=reply):
+                    check = reply if isinstance(reply, Exception) else subprocess.CompletedProcess(
+                        [], 0, reply if isinstance(reply, str) else json.dumps(reply), '')
+                    run.reset_mock()
+                    run.side_effect = [subprocess.CompletedProcess([], 1, '', "error: unknown command 'playlist'\n"), check]
+                    with self.assertRaisesRegex(PlaylistError, expected):
+                        PlaylistService()._run(['playlist', 'collected'])
+                    self.assertEqual(run.call_count, 2)
+                    self.assertEqual(run.call_args.args[0], ['/tmp/bin/ncm-cli', 'login', '--check'])
+                    self.assertEqual(run.call_args.kwargs['timeout'], 8)
+
     def test_play_network_failure_keeps_unknown_outcome_and_never_retries(self):
         with mock.patch('music_bridge.playlists.resolve_cli', return_value='/tmp/bin/ncm-cli'), mock.patch('music_bridge.playlists.subprocess.run') as run:
             run.return_value = subprocess.CompletedProcess([], 1, '', 'login refresh failed: timeout')

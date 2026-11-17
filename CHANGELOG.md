@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-17 — Collection login diagnostics
+
+- When the playlist command is explicitly unavailable, the Bridge now performs
+  one bounded, read-only login status check before choosing the user message.
+- A confirmed logged-out response shows the existing login-required guidance;
+  a healthy login with a missing command instead asks the user to inspect the
+  CLI. Network errors, timeouts, and invalid responses remain temporary errors.
+- The check never logs in, logs out, retries playback, or exposes raw CLI output.
+
+This entry describes a source update and local regression coverage only. It
+does not deploy or restart a Bridge, publish a Release, perform OTA, or flash a
+device.
+
 ## 2026-11-09 — Music efficiency and input scheduling
 
 - Changed the paused Music page to redraw only for visible state changes, while
